@@ -51,3 +51,6 @@ coverage/
 # Drizzle
 /drizzle
 /drizzle.config.ts
+
+# Agents
+.agents/
