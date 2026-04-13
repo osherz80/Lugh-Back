@@ -47,3 +47,7 @@ coverage/
 .serverless/
 .fusebox/
 .shorthand/
+
+# Drizzle
+/drizzle
+/drizzle.config.ts
