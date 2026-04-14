@@ -10,5 +10,9 @@ export class JobsController {
     const result = await this.jobsService.createJob(body.jobDescription, body.jobTitle);
     return result;
   }
-
+  @Post('/search')
+  async searchJobs(@Body() body: { jobSearch: string }) {
+    const result = await this.jobsService.searchJobs(body.jobSearch);
+    return result;
+  }
 }
