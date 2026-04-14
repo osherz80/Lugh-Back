@@ -18,7 +18,6 @@ export const DRIZZLE = 'DRIZZLE';
         const port = configService.get<string>('DB_POOLER_PORT');
         const dbName = configService.get<string>('DB_NAME');
         const databaseUrl = `postgresql://${user}:${password}@${host}:${port}/${dbName}`;
-        console.log(databaseUrl);
         if (!databaseUrl) {
           throw new Error('DATABASE_URL is not defined');
         }
