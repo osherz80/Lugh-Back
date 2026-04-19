@@ -5,6 +5,7 @@ import { ParserModule } from './parser/parser.module';
 import { ConfigModule } from '@nestjs/config';
 import { DrizzleModule } from './drizzle/drizzle.module';
 import { JobsModule } from './jobs/job.module';
+import { CVModule } from './cv/cv.module';
 
 
 @Module({
@@ -12,7 +13,8 @@ import { JobsModule } from './jobs/job.module';
     ConfigModule.forRoot({ isGlobal: true }),
     DrizzleModule,
     ParserModule,
-    JobsModule
+    JobsModule,
+    CVModule,
   ],
   controllers: [AppController],
   providers: [AppService],
