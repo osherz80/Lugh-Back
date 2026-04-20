@@ -7,12 +7,12 @@ import { BadRequestException, Injectable, Inject } from '@nestjs/common';
 import { UserDto } from 'src/dtos/user.dto';
 import { DRIZZLE } from 'src/drizzle/drizzle.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { user as usersTable } from 'src/db/schema';
+import { users } from 'src/db/schema';
 import * as schema from 'src/db/schema';
 import { eq } from 'drizzle-orm';
 import { InferSelectModel } from 'drizzle-orm';
 
-type User = InferSelectModel<typeof usersTable>;
+type User = InferSelectModel<typeof users>;
 
 @Injectable()
 export class AuthService {
@@ -69,9 +69,9 @@ export class AuthService {
         const currentTokens = user.refreshTokens || [];
         currentTokens.push(refreshToken);
 
-        const [updatedUser] = await this.db.update(usersTable)
+        const [updatedUser] = await this.db.update(users)
             .set({ refreshTokens: currentTokens })
-            .where(eq(usersTable.id, user.id))
+            .where(eq(users.id, user.id))
             .returning();
 
         return { accessToken, refreshToken, updatedUser };
@@ -102,9 +102,9 @@ export class AuthService {
         try {
             const { email, name, profilePicture } = await this.getGoogleUserInfo(token);
 
-            let [user] = await this.db.select().from(usersTable).where(eq(usersTable.email, email));
+            let [user] = await this.db.select().from(users).where(eq(users.email, email));
             if (!user) {
-                const [newUser] = await this.db.insert(usersTable).values({
+                const [newUser] = await this.db.insert(users).values({
                     username: name,
                     email: email,
                     profilePicture: profilePicture,
@@ -133,7 +133,7 @@ export class AuthService {
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(password, salt);
 
-            const [user] = await this.db.insert(usersTable).values({
+            const [user] = await this.db.insert(users).values({
                 username,
                 email,
                 password: hashedPassword,
@@ -159,7 +159,7 @@ export class AuthService {
         }
 
         try {
-            const [user] = await this.db.select().from(usersTable).where(eq(usersTable.email, email));
+            const [user] = await this.db.select().from(users).where(eq(users.email, email));
             if (!user) {
                 throw new BadRequestException('Invalid email or password');
             }
@@ -190,14 +190,14 @@ export class AuthService {
                 throw new BadRequestException('FATAL: JWT_REFRESH_SECRET environment variable is not set')
             }
             const payload: any = jwt.verify(refreshToken, refreshTokenSecret);
-            const [user] = await this.db.select().from(usersTable).where(eq(usersTable.id, payload.userId));
+            const [user] = await this.db.select().from(users).where(eq(users.id, payload.userId));
 
             if (!user || !user.refreshTokens || !user.refreshTokens.includes(refreshToken)) {
                 throw new BadRequestException('Invalid refresh token');
             }
 
             const newTokens = user.refreshTokens.filter(token => token !== refreshToken);
-            await this.db.update(usersTable).set({ refreshTokens: newTokens }).where(eq(usersTable.id, user.id));
+            await this.db.update(users).set({ refreshTokens: newTokens }).where(eq(users.id, user.id));
 
             res.clearCookie('refreshToken', {
                 httpOnly: true,
@@ -224,7 +224,7 @@ export class AuthService {
                 throw new Error('FATAL: JWT_REFRESH_SECRET environment variable is not set');
             }
             const payload: any = jwt.verify(refreshToken, refreshTokenSecret);
-            const [user] = await this.db.select().from(usersTable).where(eq(usersTable.id, payload.userId));
+            const [user] = await this.db.select().from(users).where(eq(users.id, payload.userId));
 
             if (!user || !user.refreshTokens || !user.refreshTokens.includes(refreshToken)) {
                 throw new BadRequestException('Invalid refresh token');
@@ -235,9 +235,9 @@ export class AuthService {
             const filteredTokens = user.refreshTokens.filter(token => token !== refreshToken);
             filteredTokens.push(newRefreshToken);
 
-            const [updatedUser] = await this.db.update(usersTable)
+            const [updatedUser] = await this.db.update(users)
                 .set({ refreshTokens: filteredTokens })
-                .where(eq(usersTable.id, user.id))
+                .where(eq(users.id, user.id))
                 .returning();
 
             this.sendAuthResponse(res, new UserDto(updatedUser), newAccessToken, newRefreshToken);

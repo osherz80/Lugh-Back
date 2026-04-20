@@ -1,7 +1,7 @@
 import { InferSelectModel } from 'drizzle-orm';
-import { user } from '../db/schema';
+import { users } from '../db/schema';
 
-type User = InferSelectModel<typeof user>;
+type User = InferSelectModel<typeof users>;
 
 export class UserDto {
     id: string;
