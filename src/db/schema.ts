@@ -3,6 +3,7 @@ import { pgTable, uuid, text, vector, index } from 'drizzle-orm/pg-core';
 export const candidates = pgTable('candidates', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
+  cvText: text('cv_text'),
   embedding: vector('embedding', { dimensions: 256 }),
 }, (table) => {
   return {

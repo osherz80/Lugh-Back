@@ -2,10 +2,12 @@ import { Injectable, InternalServerErrorException } from "@nestjs/common";
 import { LoadParameters, PDFParse } from 'pdf-parse';
 import * as mammoth from "mammoth";
 
-import { askAi } from "src/common/helpers/ai";
-import { FILE_TYPES_MAP, mimeMap } from "src/common/helpers/consts";
+import { askAi, getEmbedding } from "src/common/helpers/ai";
+import { FILE_TYPES_MAP, mimeMap, PII_REGEX_MAP } from "src/common/helpers/consts";
 import { createOrderedPageRender } from "src/common/helpers/utils";
 import { CV_STRUCTURE_PROMPT } from "src/common/helpers/prompts";
+import { db } from "src/db";
+import { candidates } from "src/db/schema";
 
 interface ExtendedLoadParameters extends LoadParameters {
     pagerender?: (pageData: any) => Promise<string>;
@@ -60,6 +62,16 @@ export class CVService {
         }
     }
 
+    private anonymizePatterns(text: string): string {
+        let anonymized = text;
+
+        anonymized = anonymized.replace(PII_REGEX_MAP.PHONE, '[PHONE]');
+        anonymized = anonymized.replace(PII_REGEX_MAP.EMAIL, '[EMAIL]');
+        anonymized = anonymized.replace(PII_REGEX_MAP.URL, '[URL]');
+
+        return anonymized;
+    }
+
     async parseCV(file: Express.Multer.File) {
         const parseMap = {
             [FILE_TYPES_MAP.pdf]: this.parsePdf,
@@ -68,13 +80,20 @@ export class CVService {
 
         const fileType = this.getCVFileType(file.mimetype)
         const parsedFile = await parseMap[fileType](file)
-        return parsedFile;
+        const anonymizedFile = this.anonymizePatterns(parsedFile!)
+        return anonymizedFile;
     }
 
     async uploadCV(file: Express.Multer.File) {
         try {
             const structuredText = await this.parseCV(file)
-            return structuredText;
+            const embeddedCV = await getEmbedding(structuredText!)
+            const candidate = await db.insert(candidates).values({
+                name: 'test',
+                cvText: structuredText,
+                embedding: embeddedCV,
+            })
+            return candidate;
         } catch (error) {
             throw new Error('Failed to parse CV: ' + error.message);
         }
