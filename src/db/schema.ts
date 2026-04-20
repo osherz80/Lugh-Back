@@ -1,4 +1,5 @@
 import { pgTable, uuid, text, vector, index, timestamp } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -12,7 +13,9 @@ export const users = pgTable('users', {
 });
 
 export const candidates = pgTable('candidates', {
-  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   embedding: vector('embedding', { dimensions: 256 }),
 }, (table) => {
@@ -20,6 +23,20 @@ export const candidates = pgTable('candidates', {
     candidateEmbeddingIdx: index('candidate_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops')),
   };
 });
+
+export const usersRelations = relations(users, ({ one }) => ({
+  candidate: one(candidates, {
+    fields: [users.id],
+    references: [candidates.userId],
+  }),
+}));
+
+export const candidatesRelations = relations(candidates, ({ one }) => ({
+  user: one(users, {
+    fields: [candidates.userId],
+    references: [users.id],
+  }),
+}));
 
 export const jobs = pgTable('jobs', {
   id: uuid('id').defaultRandom().primaryKey(),
