@@ -3,12 +3,21 @@ import axios from 'axios';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Request, Response } from 'express';
-import { BadRequestException, Injectable } from '@nestjs/common';
-import userModel, { IUser } from 'src/models/userModel';
+import { BadRequestException, Injectable, Inject } from '@nestjs/common';
 import { UserDto } from 'src/dtos/user.dto';
+import { DRIZZLE } from 'src/drizzle/drizzle.module';
+import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { user as usersTable } from 'src/db/schema';
+import * as schema from 'src/db/schema';
+import { eq } from 'drizzle-orm';
+import { InferSelectModel } from 'drizzle-orm';
+
+type User = InferSelectModel<typeof usersTable>;
 
 @Injectable()
 export class AuthService {
+    constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) { }
+
     async getGoogleUserInfo(accessToken: string) {
         const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
         try {
@@ -54,14 +63,18 @@ export class AuthService {
         return { accessToken, refreshToken };
     };
 
-    async setTokens(user: IUser) {
-        const { accessToken, refreshToken } = this.generateTokens(user._id.toString());
+    async setTokens(user: User) {
+        const { accessToken, refreshToken } = this.generateTokens(user.id);
 
-        if (!user.refreshTokens) user.refreshTokens = [];
-        user.refreshTokens.push(refreshToken);
-        await user.save();
+        const currentTokens = user.refreshTokens || [];
+        currentTokens.push(refreshToken);
 
-        return { accessToken, refreshToken };
+        const [updatedUser] = await this.db.update(usersTable)
+            .set({ refreshTokens: currentTokens })
+            .where(eq(usersTable.id, user.id))
+            .returning();
+
+        return { accessToken, refreshToken, updatedUser };
     };
 
     sendAuthResponse(res: Response, user: UserDto, accessToken: string, refreshToken: string) {
@@ -89,20 +102,20 @@ export class AuthService {
         try {
             const { email, name, profilePicture } = await this.getGoogleUserInfo(token);
 
-            let user = await userModel.findOne({ email });
+            let [user] = await this.db.select().from(usersTable).where(eq(usersTable.email, email));
             if (!user) {
-                user = new userModel({
+                const [newUser] = await this.db.insert(usersTable).values({
                     username: name,
                     email: email,
                     profilePicture: profilePicture,
                     password: 'google-sso'
-                });
-                await user.save();
+                }).returning();
+                user = newUser;
             }
 
-            const { accessToken, refreshToken } = await this.setTokens(user);
+            const { accessToken, refreshToken, updatedUser } = await this.setTokens(user);
 
-            this.sendAuthResponse(res, new UserDto(user), accessToken, refreshToken);
+            this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
         } catch (err: any) {
             throw new BadRequestException('Internal server error during Google authentication');
         }
@@ -120,18 +133,17 @@ export class AuthService {
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(password, salt);
 
-            const user = new userModel({
+            const [user] = await this.db.insert(usersTable).values({
                 username,
                 email,
                 password: hashedPassword,
-            });
-            await user.save();
+            }).returning();
 
-            const { accessToken, refreshToken } = await this.setTokens(user);
+            const { accessToken, refreshToken, updatedUser } = await this.setTokens(user);
 
-            this.sendAuthResponse(res, new UserDto(user), accessToken, refreshToken);
+            this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
         } catch (err: any) {
-            if (err.code === 11000) {
+            if (err.code === '23505') { // Postgres unique violation error code
                 throw new BadRequestException('Email already exists');
             } else {
                 throw new BadRequestException(err.message);
@@ -147,7 +159,7 @@ export class AuthService {
         }
 
         try {
-            const user = await userModel.findOne({ email });
+            const [user] = await this.db.select().from(usersTable).where(eq(usersTable.email, email));
             if (!user) {
                 throw new BadRequestException('Invalid email or password');
             }
@@ -157,9 +169,9 @@ export class AuthService {
                 throw new BadRequestException('Invalid email or password');
             }
 
-            const { accessToken, refreshToken } = await this.setTokens(user);
+            const { accessToken, refreshToken, updatedUser } = await this.setTokens(user);
 
-            this.sendAuthResponse(res, new UserDto(user), accessToken, refreshToken);
+            this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
         } catch (err: any) {
             throw new BadRequestException(err.message);
         }
@@ -178,14 +190,14 @@ export class AuthService {
                 throw new BadRequestException('FATAL: JWT_REFRESH_SECRET environment variable is not set')
             }
             const payload: any = jwt.verify(refreshToken, refreshTokenSecret);
-            const user = await userModel.findById(payload.userId);
+            const [user] = await this.db.select().from(usersTable).where(eq(usersTable.id, payload.userId));
 
             if (!user || !user.refreshTokens || !user.refreshTokens.includes(refreshToken)) {
                 throw new BadRequestException('Invalid refresh token');
             }
 
-            user.refreshTokens = user.refreshTokens.filter(token => token !== refreshToken);
-            await user.save();
+            const newTokens = user.refreshTokens.filter(token => token !== refreshToken);
+            await this.db.update(usersTable).set({ refreshTokens: newTokens }).where(eq(usersTable.id, user.id));
 
             res.clearCookie('refreshToken', {
                 httpOnly: true,
@@ -212,19 +224,23 @@ export class AuthService {
                 throw new Error('FATAL: JWT_REFRESH_SECRET environment variable is not set');
             }
             const payload: any = jwt.verify(refreshToken, refreshTokenSecret);
-            const user = await userModel.findById(payload.userId);
+            const [user] = await this.db.select().from(usersTable).where(eq(usersTable.id, payload.userId));
 
             if (!user || !user.refreshTokens || !user.refreshTokens.includes(refreshToken)) {
                 throw new BadRequestException('Invalid refresh token');
             }
 
-            const { accessToken: newAccessToken, refreshToken: newRefreshToken } = this.generateTokens(user._id.toString());
+            const { accessToken: newAccessToken, refreshToken: newRefreshToken } = this.generateTokens(user.id);
 
-            user.refreshTokens = user.refreshTokens.filter(token => token !== refreshToken);
-            user.refreshTokens.push(newRefreshToken);
-            await user.save();
+            const filteredTokens = user.refreshTokens.filter(token => token !== refreshToken);
+            filteredTokens.push(newRefreshToken);
 
-            this.sendAuthResponse(res, new UserDto(user), newAccessToken, newRefreshToken);
+            const [updatedUser] = await this.db.update(usersTable)
+                .set({ refreshTokens: filteredTokens })
+                .where(eq(usersTable.id, user.id))
+                .returning();
+
+            this.sendAuthResponse(res, new UserDto(updatedUser), newAccessToken, newRefreshToken);
         } catch (err: any) {
             throw new BadRequestException('Invalid refresh token');
         }

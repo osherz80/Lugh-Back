@@ -1,20 +1,20 @@
-import { IUser } from "../models/userModel";
+import { InferSelectModel } from 'drizzle-orm';
+import { user } from '../db/schema';
+
+type User = InferSelectModel<typeof user>;
 
 export class UserDto {
-
-    id: import("mongoose").Types.ObjectId;
-    username: string;
+    id: string;
+    username: string | null;
     email: string;
-    profilePicture: string | undefined;
-    bio: string | undefined;
+    profilePicture: string | null;
 
     constructor(
-        user: IUser
+        user: User
     ) {
-        this.id = user._id;
+        this.id = user.id;
         this.username = user.username;
         this.email = user.email;
         this.profilePicture = user.profilePicture;
-        this.bio = user.bio;
     }
 }

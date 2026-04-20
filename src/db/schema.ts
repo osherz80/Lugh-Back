@@ -1,4 +1,15 @@
-import { pgTable, uuid, text, vector, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, vector, index, timestamp } from 'drizzle-orm/pg-core';
+
+export const user = pgTable('user', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  username: text('username'),
+  email: text('email').notNull().unique(),
+  password: text('password').notNull(),
+  profilePicture: text('profilePicture'),
+  refreshTokens: text('refreshTokens').array().default([]),
+  createdAt: timestamp('createdAt').defaultNow(),
+  updatedAt: timestamp('updatedAt').defaultNow(),
+});
 
 export const candidates = pgTable('candidates', {
   id: uuid('id').primaryKey().defaultRandom(),
