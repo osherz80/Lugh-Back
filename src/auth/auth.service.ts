@@ -115,7 +115,8 @@ export class AuthService {
 
             const { accessToken, refreshToken, updatedUser } = await this.setTokens(user);
 
-            this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
+            const authRes = this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
+            res.send(authRes);
         } catch (err: any) {
             throw new BadRequestException('Internal server error during Google authentication');
         }

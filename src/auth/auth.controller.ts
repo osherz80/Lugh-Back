@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 @Controller('auth')
 export class AuthController {
     constructor(private readonly authService: AuthService) { }
+
     @Post('/register')
     async register(@Body() body: any, @Res() res: Response, @Req() req: Request) {
         const result = await this.authService.register(req, res);
@@ -14,6 +15,7 @@ export class AuthController {
 
     @Post('/google')
     async googleLogin(@Body() body: { token: string }, @Res() res: Response, @Req() req: Request) {
+        console.log('googleLogin', body);
         const result = await this.authService.googleLogin(req, res);
         return result;
     }
