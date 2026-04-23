@@ -6,6 +6,7 @@ import { ConfigModule } from '@nestjs/config';
 import { DrizzleModule } from './drizzle/drizzle.module';
 import { JobsModule } from './jobs/job.module';
 import { CVModule } from './cv/cv.module';
+import { AuthModule } from './auth/auth.module';
 
 
 @Module({
@@ -15,6 +16,7 @@ import { CVModule } from './cv/cv.module';
     ParserModule,
     JobsModule,
     CVModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
