@@ -78,18 +78,24 @@ export class AuthService {
     };
 
     sendAuthResponse(res: Response, user: UserDto, accessToken: string, refreshToken: string) {
+        res.cookie('accessToken', accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 15 * 60 * 1000, // 15m
+        });
+
         res.cookie('refreshToken', refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000
+            maxAge: 7 * 24 * 60 * 60 * 1000, // 7d
         });
 
-        return {
-            accessToken,
+        return res.send({
             isAuth: true,
-            user
-        };
+            user,
+        });
     };
 
     async googleLogin(req: Request, res: Response) {
@@ -115,8 +121,7 @@ export class AuthService {
 
             const { accessToken, refreshToken, updatedUser } = await this.setTokens(user);
 
-            const authRes = this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
-            res.send(authRes);
+            return this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
         } catch (err: any) {
             throw new BadRequestException('Internal server error during Google authentication');
         }
@@ -142,7 +147,7 @@ export class AuthService {
 
             const { accessToken, refreshToken, updatedUser } = await this.setTokens(user);
 
-            this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
+            return this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
         } catch (err: any) {
             if (err.code === '23505') { // Postgres unique violation error code
                 throw new BadRequestException('Email already exists');
@@ -172,7 +177,7 @@ export class AuthService {
 
             const { accessToken, refreshToken, updatedUser } = await this.setTokens(user);
 
-            this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
+            return this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
         } catch (err: any) {
             throw new BadRequestException(err.message);
         }
@@ -200,13 +205,19 @@ export class AuthService {
             const newTokens = user.refreshTokens.filter(token => token !== refreshToken);
             await this.db.update(users).set({ refreshTokens: newTokens }).where(eq(users.id, user.id));
 
+            res.clearCookie('accessToken', {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'lax'
+            });
+
             res.clearCookie('refreshToken', {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'strict'
             });
 
-            return { message: 'Logged out successfully' };
+            return res.send({ message: 'Logged out successfully' });
         } catch (err: any) {
             throw new BadRequestException('Invalid refresh token');
         }
@@ -241,7 +252,7 @@ export class AuthService {
                 .where(eq(users.id, user.id))
                 .returning();
 
-            this.sendAuthResponse(res, new UserDto(updatedUser), newAccessToken, newRefreshToken);
+            return this.sendAuthResponse(res, new UserDto(updatedUser), newAccessToken, newRefreshToken);
         } catch (err: any) {
             throw new BadRequestException('Invalid refresh token');
         }
