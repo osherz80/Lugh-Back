@@ -7,12 +7,14 @@ import { BadRequestException, Injectable, Inject } from '@nestjs/common';
 import { UserDto } from 'src/dtos/user.dto';
 import { DRIZZLE } from 'src/drizzle/drizzle.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { users } from 'src/db/schema';
-import * as schema from 'src/db/schema';
+import { users, candidates } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { InferSelectModel } from 'drizzle-orm';
+import * as schema from '../db/schema/index';
+import { FullUser } from 'src/common/types/general';
 
 type User = InferSelectModel<typeof users>;
+type Candidate = InferSelectModel<typeof candidates>;
 
 @Injectable()
 export class AuthService {
@@ -66,16 +68,21 @@ export class AuthService {
     async setTokens(user: User) {
         const { accessToken, refreshToken } = this.generateTokens(user.id);
 
-        const currentTokens = user.refreshTokens || [];
+        let currentTokens = user.refreshTokens || [];
+
+        const MAX_SESSIONS = 3;
+        if (currentTokens.length >= MAX_SESSIONS) {
+            currentTokens = currentTokens.slice(-(MAX_SESSIONS - 1));
+        }
+
         currentTokens.push(refreshToken);
 
-        const [updatedUser] = await this.db.update(users)
+        await this.db.update(users)
             .set({ refreshTokens: currentTokens })
-            .where(eq(users.id, user.id))
-            .returning();
+            .where(eq(users.id, user.id));
 
-        return { accessToken, refreshToken, updatedUser };
-    };
+        return { accessToken, refreshToken };
+    }
 
     sendAuthResponse(res: Response, user: UserDto, accessToken: string, refreshToken: string) {
         res.cookie('accessToken', accessToken, {
@@ -98,6 +105,37 @@ export class AuthService {
         });
     };
 
+    async getFullUserByEmail(email: string): Promise<FullUser | undefined> {
+        try {
+            return await this.db.query.users.findFirst({
+                where: eq(users.email, email),
+                with: {
+                    candidate: {
+                        with: {
+                            cvs: true
+                        }
+                    }
+                }
+            });
+        } catch (err: any) {
+            console.error('Error fetching full user by email:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async setCandidate(user: User): Promise<Candidate | undefined> {
+        try {
+            const [candidate] = await this.db.insert(candidates).values({
+                userId: user.id,
+                name: user.username!
+            }).returning();
+            return candidate;
+        } catch (err: any) {
+            console.error('Error setting candidate:', err);
+            throw new BadRequestException(err.message);
+        }
+    };
+
     async googleLogin(req: Request, res: Response) {
         const { token } = req.body;
 
@@ -108,7 +146,8 @@ export class AuthService {
         try {
             const { email, name, profilePicture } = await this.getGoogleUserInfo(token);
 
-            let [user] = await this.db.select().from(users).where(eq(users.email, email));
+            let user = await this.getFullUserByEmail(email);
+
             if (!user) {
                 const [newUser] = await this.db.insert(users).values({
                     username: name,
@@ -116,12 +155,15 @@ export class AuthService {
                     profilePicture: profilePicture,
                     password: 'google-sso'
                 }).returning();
+
+                const candidate = await this.setCandidate(newUser);
+                newUser['candidate'] = candidate;
                 user = newUser;
             }
 
-            const { accessToken, refreshToken, updatedUser } = await this.setTokens(user);
+            const { accessToken, refreshToken } = await this.setTokens(user);
 
-            return this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
+            return this.sendAuthResponse(res, new UserDto(user), accessToken, refreshToken);
         } catch (err: any) {
             throw new BadRequestException('Internal server error during Google authentication');
         }
@@ -145,9 +187,12 @@ export class AuthService {
                 password: hashedPassword,
             }).returning();
 
-            const { accessToken, refreshToken, updatedUser } = await this.setTokens(user);
+            const candidate = await this.setCandidate(user);
+            user['candidate'] = candidate;
 
-            return this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
+            const { accessToken, refreshToken } = await this.setTokens(user);
+
+            return this.sendAuthResponse(res, new UserDto(user), accessToken, refreshToken);
         } catch (err: any) {
             if (err.code === '23505') { // Postgres unique violation error code
                 throw new BadRequestException('Email already exists');
@@ -165,7 +210,8 @@ export class AuthService {
         }
 
         try {
-            const [user] = await this.db.select().from(users).where(eq(users.email, email));
+            let user = await this.getFullUserByEmail(email);
+
             if (!user) {
                 throw new BadRequestException('Invalid email or password');
             }
@@ -175,10 +221,11 @@ export class AuthService {
                 throw new BadRequestException('Invalid email or password');
             }
 
-            const { accessToken, refreshToken, updatedUser } = await this.setTokens(user);
+            const { accessToken, refreshToken } = await this.setTokens(user);
 
-            return this.sendAuthResponse(res, new UserDto(updatedUser), accessToken, refreshToken);
+            return this.sendAuthResponse(res, new UserDto(user), accessToken, refreshToken);
         } catch (err: any) {
+            console.log(err);
             throw new BadRequestException(err.message);
         }
     };
@@ -247,12 +294,11 @@ export class AuthService {
             const filteredTokens = user.refreshTokens.filter(token => token !== refreshToken);
             filteredTokens.push(newRefreshToken);
 
-            const [updatedUser] = await this.db.update(users)
+            await this.db.update(users)
                 .set({ refreshTokens: filteredTokens })
-                .where(eq(users.id, user.id))
-                .returning();
+                .where(eq(users.id, user.id));
 
-            return this.sendAuthResponse(res, new UserDto(updatedUser), newAccessToken, newRefreshToken);
+            return this.sendAuthResponse(res, new UserDto(user), newAccessToken, newRefreshToken);
         } catch (err: any) {
             throw new BadRequestException('Invalid refresh token');
         }
