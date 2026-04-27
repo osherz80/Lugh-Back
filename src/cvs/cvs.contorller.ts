@@ -1,7 +1,7 @@
 import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { CVService } from './cv.service';
-import { CVFileValidator } from './cv.validator';
+import { CVService } from './cvs.service';
+import { CVFileValidator } from './cvs.validator';
 
 
 @Controller('cv')

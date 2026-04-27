@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { CVController } from './cv.contorller';
-import { CVService } from './cv.service';
+import { CVController } from './cvs.contorller';
+import { CVService } from './cvs.service';
 
 @Module({
     controllers: [CVController],
