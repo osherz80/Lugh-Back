@@ -1,16 +1,16 @@
-import { pgTable, uuid, text, vector, index, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { candidates } from './candidates';
+import { candidates } from './index';
 
 export const users = pgTable('users', {
     id: uuid('id').primaryKey().defaultRandom(),
     username: text('username'),
     email: text('email').notNull().unique(),
     password: text('password').notNull(),
-    profilePicture: text('profilePicture'),
-    refreshTokens: text('refreshTokens').array().default([]),
-    createdAt: timestamp('createdAt').defaultNow(),
-    updatedAt: timestamp('updatedAt').defaultNow(),
+    profilePicture: text('profile_picture'),
+    refreshTokens: text('refresh_tokens').array().default([]),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 export const usersRelations = relations(users, ({ one }) => ({

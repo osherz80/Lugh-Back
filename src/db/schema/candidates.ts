@@ -1,6 +1,7 @@
 import { pgTable, uuid, text, vector, index, timestamp } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { users } from './users';
+
+import { cvs, users } from './index';
 
 export const candidates = pgTable('candidates', {
     userId: uuid('user_id')
@@ -14,9 +15,10 @@ export const candidates = pgTable('candidates', {
     };
 });
 
-export const candidatesRelations = relations(candidates, ({ one }) => ({
+export const candidatesRelations = relations(candidates, ({ one, many }) => ({
     user: one(users, {
         fields: [candidates.userId],
         references: [users.id],
     }),
+    cvs: many(cvs)
 }));
