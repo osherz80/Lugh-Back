@@ -1,33 +1,41 @@
-/**
- * Generates a pageRender function for pdf-parse that maintains visual text order.
- * Especially useful for layouts with multiple columns or sidebars.
- */
 export const createOrderedPageRender = () => {
     return async (pageData: any): Promise<string> => {
         const textContent = await pageData.getTextContent();
 
         const sortedItems = textContent.items.sort((a: any, b: any) => {
             const yDiff = b.transform[5] - a.transform[5];
-
             if (Math.abs(yDiff) <= 5) {
                 return a.transform[4] - b.transform[4];
             }
-
             return yDiff;
         });
 
         let lastY = -1;
+        let lastX = -1;
+        let lastWidth = 0;
         let fullText = '';
 
         for (const item of sortedItems) {
             const currentY = item.transform[5];
+            const currentX = item.transform[4];
 
-            if (lastY !== -1 && Math.abs(currentY - lastY) > 5) {
-                fullText += '\n';
+            if (lastY !== -1) {
+                if (Math.abs(currentY - lastY) > 5) {
+                    fullText += '\n';
+                }
+                else {
+                    const gap = currentX - (lastX + lastWidth);
+                    if (gap > 2) {
+                        fullText += ' ';
+                    }
+                }
             }
 
-            fullText += item.str + ' ';
+            fullText += item.str;
+
             lastY = currentY;
+            lastX = currentX;
+            lastWidth = item.width || 0;
         }
 
         return fullText;

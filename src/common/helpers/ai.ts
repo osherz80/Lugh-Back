@@ -12,6 +12,17 @@ export const askAi = async (prompt: string) => {
     return response.text;
 }
 
+export const askAiLite = async (prompt: string) => {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+    const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-lite",
+        contents: prompt,
+
+    });
+    return response.text;
+}
+
 /**
  * Generates an embedding vector for the provided text using Gemini's embedding model.
  * @param text The text to embed.

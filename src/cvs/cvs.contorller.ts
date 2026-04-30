@@ -15,7 +15,7 @@ export class CVController {
             throw new BadRequestException('No file received!');
         }
 
-        const result = await this.cvService.uploadCV(file);
+        const result = await this.cvService.getLayoutScore(file);
         return result;
     }
 }

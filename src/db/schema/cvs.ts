@@ -10,13 +10,13 @@ export const cvs = pgTable('cvs', {
 
     // File Management
     fileName: text('file_name').notNull(),
-    fileUrl: text('file_url').notNull(),
+    fileUrl: text('file_url'),
     isMaster: boolean('is_master').default(false).notNull(),
     roleTag: text('role_tag'),
 
     // Content Layers
     content: text('content').notNull(),
-    embedding: vector('embedding', { dimensions: 256 }),
+    embedding: vector('embedding', { dimensions: 256 }),// TODO: add chunking
 
     // --- The Metrics (Flattened from JSONB) ---
     overallScore: integer('overall_score').default(0),
