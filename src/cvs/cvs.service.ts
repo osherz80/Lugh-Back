@@ -230,4 +230,33 @@ export class CVService {
         console.log("LAYOUT Overall score: ", overallScore);
         return overallScore;
     }
+
+    private deterministicKeywordsScore(text: string) {
+        return 0;// TODO: implement after constructing vocabulary
+    }
+
+    private async smartKeywordsScore(text: string, file: Express.Multer.File) {
+        const roleTag = await this.getRoleTag(text);
+        if (!roleTag) {
+            console.log("Role tag not found.");
+        }
+        const cleanText = this.cleanText(text);
+        const prompt = prompts.CV_SMART_KEYWORDS_SCORE_PROMPT
+            .replace('[ROLE_TAG]', roleTag!)
+            .replace('[RESUME_TEXT]', cleanText);
+
+        const score = await askAi(prompt);
+        console.log("Smart score: ", score);
+
+        return score;
+    }
+
+    async getKeywordsScore(file: Express.Multer.File) {
+        const text = await this.parseCV(file);
+        const deterministicScore = this.deterministicKeywordsScore(text!);
+        const smartScore = await this.smartKeywordsScore(text!, file);
+        const overallScore = +smartScore!['keywords_score'];
+        console.log("KEYWORDS Overall score: ", overallScore);
+        return overallScore;
+    }
 }
