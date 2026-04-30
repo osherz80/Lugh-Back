@@ -9,7 +9,16 @@ export const askAi = async (prompt: string) => {
         contents: prompt,
 
     });
-    return response.text;
+
+    if (response.text) {
+
+        const cleanJson = response.text.replace(/```json|```/g, '').trim();
+        const smartScoreObj = JSON.parse(cleanJson);
+
+        return smartScoreObj;
+    } else {
+        return null;
+    }
 }
 
 export const askAiLite = async (prompt: string) => {

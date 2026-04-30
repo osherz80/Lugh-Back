@@ -15,7 +15,7 @@ export class CVController {
             throw new BadRequestException('No file received!');
         }
 
-        const result = await this.cvService.getImpactScore(file);
+        const result = await this.cvService.getCVScore(file);
         return result;
     }
 }

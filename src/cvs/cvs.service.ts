@@ -66,16 +66,6 @@ export class CVService {
         return fileRawText;
     }
 
-    async uploadCV(file: Express.Multer.File) {
-        try {
-            const fileRawText = await this.parseCV(file);
-
-            return fileRawText;
-        } catch (error) {
-            throw new Error('Failed to parse CV: ' + error.message);
-        }
-    }
-
     async getRoleTag(text: string) {
         try {
             const prompt = prompts.CV_ROLE_TAG_EXTRACTOR_PROMPT
@@ -89,7 +79,7 @@ export class CVService {
         }
     }
 
-    deterministicATSScore(text: string, file: Express.Multer.File) {
+    deterministicATSScore(cvText: string, file: Express.Multer.File) {
         let score = 100;
         const fileType = this.getCVFileType(file.mimetype)
         if (fileType !== FILE_TYPES_MAP.pdf) {
@@ -97,9 +87,9 @@ export class CVService {
             score -= 20;
         }
 
-        const hasEmail = CV_CHECK_PATTERNS.EMAIL.test(text);
-        const hasLinkedIn = CV_CHECK_PATTERNS.LINKEDIN.test(text);//TODO: check hyperlink
-        const hasGitHub = CV_CHECK_PATTERNS.GITHUB.test(text);
+        const hasEmail = CV_CHECK_PATTERNS.EMAIL.test(cvText);
+        const hasLinkedIn = CV_CHECK_PATTERNS.LINKEDIN.test(cvText);//TODO: check hyperlink
+        const hasGitHub = CV_CHECK_PATTERNS.GITHUB.test(cvText);
 
         if (!hasEmail) score -= 30;
         !hasEmail && console.log("No email found in CV -30pt")
@@ -108,7 +98,7 @@ export class CVService {
         if (!hasGitHub) score -= 10;
         !hasGitHub && console.log("No github found in CV -10pts")
 
-        const wordCount = text.split(/\s+/).length;
+        const wordCount = cvText.split(/\s+/).length;
         if (wordCount < 200 || wordCount > 1500) {
             score -= 15;
             wordCount < 200 && console.log("CV is too short -15pt")
@@ -125,20 +115,10 @@ export class CVService {
             .trim();
     }
 
-    async smartATSScore(text: string, file: Express.Multer.File) {
-        const roleTag = await this.getRoleTag(text);
-        if (!roleTag) {
-            console.log("Role tag not found.");
-        }
-
-        console.log("Original text: ", text);
-
-        const cleanText = this.cleanText(text);
-        console.log("Clean text: ", cleanText);
-
+    async smartATSScore(cvText: string, roleTag: string) {
         const prompt = prompts.CV_SMART_ATS_SCORE_PROMPT
             .replace('[TARGET_ROLE]', roleTag!)
-            .replace('[RESUME_TEXT]', cleanText);
+            .replace('[RESUME_TEXT]', cvText);
 
         const score = await askAi(prompt);
         console.log("Smart score: ", score);
@@ -146,31 +126,29 @@ export class CVService {
         return score;
     }
 
-    async getAtstsScore(file: Express.Multer.File) {
-        const text = await this.parseCV(file);
-        text && console.log("CV text extracted");
-        const deterministicScore = this.deterministicATSScore(text!, file);
-        console.log("Deterministic score: ", deterministicScore);
-        const smartScore = await this.smartATSScore(text!, file);
-        console.log("Smart score: ", smartScore);
+    async getAtstsScore(file: Express.Multer.File, cvText: string, roleTag: string) {
+        const deterministicScore = this.deterministicATSScore(cvText, file);
+        console.log("Deterministic ATS score: ", deterministicScore);
+        const smartScore = await this.smartATSScore(cvText, roleTag);
+        console.log("Smart ATS score: ", smartScore);
         const overallScore = deterministicScore * 0.5 + (+smartScore!['ats_score']) * 0.5;
-        console.log("Overall score: ", overallScore);
+        console.log("Overall ATS score: ", overallScore);
         return overallScore;
     }
 
-    deterministicLayoutScore(text: string) {
+    deterministicLayoutScore(cvText: string) {
         let score = 100;
 
         // 1. עקביות בפורמט תאריכים
-        const numericDate = CV_CHECK_PATTERNS.DATE_NUMERIC.test(text);
-        const textualDate = CV_CHECK_PATTERNS.DATE_TEXTUAL.test(text);
+        const numericDate = CV_CHECK_PATTERNS.DATE_NUMERIC.test(cvText);
+        const textualDate = CV_CHECK_PATTERNS.DATE_TEXTUAL.test(cvText);
         if (numericDate && textualDate) {
             score -= 20;
             console.log("Layout: Inconsistent date formats detected (-20pts)");
         }
 
         // 2. בדיקת צפיפות פסקאות (Density)
-        const paragraphs = text.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+        const paragraphs = cvText.split('\n').map(p => p.trim()).filter(p => p.length > 0);
         const hasDenseBlocks = paragraphs.some(p => p.split(/\s+/).length > 50);
         if (hasDenseBlocks) {
             score -= 15;
@@ -180,14 +158,14 @@ export class CVService {
         // 3. בדיקת נוכחות בולטים (Scannability)
         // מחפש סימני רשימה נפוצים בתחילת שורה
         const bulletRegex = CV_CHECK_PATTERNS.BULLET;
-        const hasBullets = bulletRegex.test(text);
+        const hasBullets = bulletRegex.test(cvText);
         if (!hasBullets) {
             score -= 20;
             console.log("Layout: No bullet points found. Low scannability (-20pts)");
         }
 
         // 4. בדיקת שטח לבן ויחס מילים (White Space Balance)
-        const wordCount = text.split(/\s+/).length;
+        const wordCount = cvText.split(/\s+/).length;
 
         if (wordCount < 200) {
             // מסמך דליל מדי - נראה חובבני או ריק
@@ -210,40 +188,34 @@ export class CVService {
         return Math.max(0, score);
     }
 
-    async smartLayoutScore(text: string, file: Express.Multer.File) {
+    async smartLayoutScore(cvText: string) {
 
         const prompt = prompts.CV_SMART_LAYOUT_SCORE_PROMPT
-            .replace('[RESUME_TEXT]', text);// TODO: check if should send src file
+            .replace('[RESUME_TEXT]', cvText);// TODO: check if should send src file
 
         const score = await askAi(prompt);
         console.log("SmartLayout score: ", score);
         return score
     }
 
-    async getLayoutScore(file: Express.Multer.File) {
-        const text = await this.parseCV(file);
-        const deterministicScore = this.deterministicLayoutScore(text!);
+    async getLayoutScore(cvText: string) {
+        const deterministicScore = await this.deterministicLayoutScore(cvText);
         console.log("LAYOUT Deterministic score: ", deterministicScore);
-        const smartScore = await this.smartLayoutScore(text!, file);
+        const smartScore = await this.smartLayoutScore(cvText);
         console.log("LAYOUT Smart score: ", smartScore);
         const overallScore = deterministicScore * 0.5 + (+smartScore!['layout_score']) * 0.5;
         console.log("LAYOUT Overall score: ", overallScore);
         return overallScore;
     }
 
-    deterministicKeywordsScore(text: string) {
+    deterministicKeywordsScore(cvText: string) {
         return 0;// TODO: implement after constructing vocabulary
     }
 
-    async smartKeywordsScore(text: string, file: Express.Multer.File) {
-        const roleTag = await this.getRoleTag(text);
-        if (!roleTag) {
-            console.log("Role tag not found.");
-        }
-        const cleanText = this.cleanText(text);
+    async smartKeywordsScore(cvText: string, roleTag: string) {
         const prompt = prompts.CV_SMART_KEYWORDS_SCORE_PROMPT
             .replace('[ROLE_TAG]', roleTag!)
-            .replace('[RESUME_TEXT]', cleanText);
+            .replace('[RESUME_TEXT]', cvText);
 
         const score = await askAi(prompt);
         console.log("Smart score: ", score);
@@ -251,10 +223,9 @@ export class CVService {
         return score;
     }
 
-    async getKeywordsScore(file: Express.Multer.File) {
-        const text = await this.parseCV(file);
-        const deterministicScore = this.deterministicKeywordsScore(text!);
-        const smartScore = await this.smartKeywordsScore(text!, file);
+    async getKeywordsScore(cvText: string, roleTag: string) {
+        const deterministicScore = this.deterministicKeywordsScore(cvText);
+        const smartScore = await this.smartKeywordsScore(cvText, roleTag);
         const overallScore = +smartScore!['keywords_score'];
         console.log("KEYWORDS Overall score: ", overallScore);
         return overallScore;
@@ -301,43 +272,40 @@ export class CVService {
         return Math.round(impactScore);
     }
 
-    async smartImpactScore(text: string, file: Express.Multer.File) {
-        const roleTag = await this.getRoleTag(text);
-        if (!roleTag) {
-            console.log("Role tag not found.");
-        }
-        const cleanText = this.cleanText(text);
+    async smartImpactScore(cvText: string, roleTag: string) {
         const prompt = prompts.CV_SMART_IMPACT_SCORE_PROMPT
             .replace('[ROLE_TAG]', roleTag!)
-            .replace('[RESUME_TEXT]', cleanText);
+            .replace('[RESUME_TEXT]', cvText);
 
         const score = await askAi(prompt);
         console.log("SmartImpact score: ", score);
         return score
     }
 
-    async getImpactScore(file: Express.Multer.File) {
-        const text = await this.parseCV(file);
-        const deterministicScore = this.deterministicImpactScore(text!);
+    async getImpactScore(cvText: string, roleTag: string) {
+        const deterministicScore = this.deterministicImpactScore(cvText);
         console.log("Impact Deterministic score: ", deterministicScore);
-        const smartScoreRaw = await this.smartImpactScore(text!, file);
-        console.log("Impact Smart score raw: ", smartScoreRaw);
+        const smartScore = await this.smartImpactScore(cvText, roleTag);
+        console.log("Impact Smart score: ", smartScore);
 
-        const cleanJson = smartScoreRaw!.replace(/```json|```/g, '').trim();
-        const smartScoreObj = JSON.parse(cleanJson);
-        console.log("Impact Smart score obj: ", smartScoreObj);
-
-        const overallScore = deterministicScore * 0.5 + (+smartScoreObj['impact_score']) * 0.5;
+        const overallScore = deterministicScore * 0.5 + (+smartScore!['impact_score']) * 0.5;
         console.log("IMPACT Overall score: ", overallScore);
         return overallScore;
     }
 
-    async getCVScores(file: Express.Multer.File) {
-        const [keywordsScore, layoutScore, impactScore] = await Promise.all([
-            this.getKeywordsScore(file),
-            this.getLayoutScore(file),
-            this.getImpactScore(file)
+    async getCVScore(file: Express.Multer.File) {
+        const cvText = await this.parseCV(file);
+        const cvCleanText = this.cleanText(cvText!);
+        const roleTag = await this.getRoleTag(cvCleanText!);
+        const [keywordsScore, layoutScore, impactScore, atsScore] = await Promise.all([
+            this.getKeywordsScore(cvCleanText, roleTag!),
+            this.getLayoutScore(cvCleanText),
+            this.getImpactScore(cvCleanText, roleTag!),
+            this.getAtstsScore(file, cvCleanText!, roleTag!)
         ]);
-        return { keywordsScore, layoutScore, impactScore };
+
+        const finalScore = keywordsScore * 0.25 + layoutScore * 0.2 + impactScore * 0.35 + atsScore * 0.2;
+        console.log("Final score: ", finalScore);
+        return { keywordsScore, layoutScore, impactScore, atsScore, finalScore };
     }
 }
