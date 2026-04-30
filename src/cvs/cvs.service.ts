@@ -14,11 +14,11 @@ interface ExtendedLoadParameters extends LoadParameters {
 
 @Injectable()
 export class CVService {
-    private getCVFileType(mimeType: string) {
+    getCVFileType(mimeType: string) {
         return mimeMap[mimeType] || 'unknown';
     }
 
-    private async parseDocx(file: Express.Multer.File): Promise<string | undefined> {
+    async parseDocx(file: Express.Multer.File): Promise<string | undefined> {
         try {
             const result = await mammoth.extractRawText({ buffer: file.buffer });
 
@@ -34,7 +34,7 @@ export class CVService {
         }
     }
 
-    private async parsePdf(file: Express.Multer.File): Promise<string | undefined> {
+    async parsePdf(file: Express.Multer.File): Promise<string | undefined> {
         let parser: PDFParse | null = null;
         try {
             const data = Uint8Array.from(file.buffer);
@@ -76,7 +76,7 @@ export class CVService {
         }
     }
 
-    private async getRoleTag(text: string) {
+    async getRoleTag(text: string) {
         try {
             const prompt = prompts.CV_ROLE_TAG_EXTRACTOR_PROMPT
                 .replace('[RESUME_TEXT]', text);
@@ -89,7 +89,7 @@ export class CVService {
         }
     }
 
-    private deterministicATSScore(text: string, file: Express.Multer.File) {
+    deterministicATSScore(text: string, file: Express.Multer.File) {
         let score = 100;
         const fileType = this.getCVFileType(file.mimetype)
         if (fileType !== FILE_TYPES_MAP.pdf) {
@@ -118,14 +118,14 @@ export class CVService {
         return Math.max(0, score);
     }
 
-    private cleanText(text: string): string {
+    cleanText(text: string): string {
         return text
             .replace(/\s\s+/g, ' ') // החלפת רווחים כפולים/מרובים ברווח אחד
             .replace(/\n\s+\n/g, '\n\n') // ניקוי שורות ריקות עם רווחים
             .trim();
     }
 
-    private async smartATSScore(text: string, file: Express.Multer.File) {
+    async smartATSScore(text: string, file: Express.Multer.File) {
         const roleTag = await this.getRoleTag(text);
         if (!roleTag) {
             console.log("Role tag not found.");
@@ -158,7 +158,7 @@ export class CVService {
         return overallScore;
     }
 
-    private deterministicLayoutScore(text: string) {
+    deterministicLayoutScore(text: string) {
         let score = 100;
 
         // 1. עקביות בפורמט תאריכים
@@ -179,7 +179,7 @@ export class CVService {
 
         // 3. בדיקת נוכחות בולטים (Scannability)
         // מחפש סימני רשימה נפוצים בתחילת שורה
-        const bulletRegex = /^[•\-\*◦]/m;
+        const bulletRegex = CV_CHECK_PATTERNS.BULLET;
         const hasBullets = bulletRegex.test(text);
         if (!hasBullets) {
             score -= 20;
@@ -210,7 +210,7 @@ export class CVService {
         return Math.max(0, score);
     }
 
-    private async smartLayoutScore(text: string, file: Express.Multer.File) {
+    async smartLayoutScore(text: string, file: Express.Multer.File) {
 
         const prompt = prompts.CV_SMART_LAYOUT_SCORE_PROMPT
             .replace('[RESUME_TEXT]', text);// TODO: check if should send src file
@@ -231,11 +231,11 @@ export class CVService {
         return overallScore;
     }
 
-    private deterministicKeywordsScore(text: string) {
+    deterministicKeywordsScore(text: string) {
         return 0;// TODO: implement after constructing vocabulary
     }
 
-    private async smartKeywordsScore(text: string, file: Express.Multer.File) {
+    async smartKeywordsScore(text: string, file: Express.Multer.File) {
         const roleTag = await this.getRoleTag(text);
         if (!roleTag) {
             console.log("Role tag not found.");
@@ -258,5 +258,86 @@ export class CVService {
         const overallScore = +smartScore!['keywords_score'];
         console.log("KEYWORDS Overall score: ", overallScore);
         return overallScore;
+    }
+
+    deterministicImpactScore(text: string) {
+        // 1. זיהוי נתונים כמותיים: מספרים גדולים, אחוזים, סימני פלוס, דולר וכו'
+        // מחפש: 200,000+, 99.9%, $10k, 50M
+        const metricsRegex = CV_CHECK_PATTERNS.METRICS;
+        const metricsFound = text.match(metricsRegex) || [];
+
+        // // 2. ניתוח בולטים (הנחה שכל שורה חדשה או נקודה בטקסט הנקי היא בולט)
+        // const bullets = text.split('\n').filter(line => line.trim().length > 5);
+
+        // let shortBullets = 0;
+        // let longBullets = 0;
+        // let idealBullets = 0;
+
+        // bullets.forEach(bullet => {
+        //     const wordCount = bullet.trim().split(/\s+/).length;
+        //     if (wordCount < 5) shortBullets++;
+        //     else if (wordCount > 25) longBullets++;
+        //     else if (wordCount >= 10 && wordCount <= 20) idealBullets++;
+        // });
+
+        let impactScore = 0;
+        impactScore += Math.min(metricsFound.length * 20, 100);
+
+        // if (bullets.length > 0) {
+        //     const idealRatio = idealBullets / bullets.length;
+        //     impactScore += Math.min(idealRatio * 100, 50);
+        // }
+
+        // return {
+        //     metricsCount: metricsFound.length,
+        //     // bulletAnalysis: {
+        //     //     totalBullets: bullets.length,
+        //     //     shortBullets,
+        //     //     longBullets,
+        //     //     idealBullets
+        //     // },
+        //     score: Math.round(impactScore)
+        // };
+        return Math.round(impactScore);
+    }
+
+    async smartImpactScore(text: string, file: Express.Multer.File) {
+        const roleTag = await this.getRoleTag(text);
+        if (!roleTag) {
+            console.log("Role tag not found.");
+        }
+        const cleanText = this.cleanText(text);
+        const prompt = prompts.CV_SMART_IMPACT_SCORE_PROMPT
+            .replace('[ROLE_TAG]', roleTag!)
+            .replace('[RESUME_TEXT]', cleanText);
+
+        const score = await askAi(prompt);
+        console.log("SmartImpact score: ", score);
+        return score
+    }
+
+    async getImpactScore(file: Express.Multer.File) {
+        const text = await this.parseCV(file);
+        const deterministicScore = this.deterministicImpactScore(text!);
+        console.log("Impact Deterministic score: ", deterministicScore);
+        const smartScoreRaw = await this.smartImpactScore(text!, file);
+        console.log("Impact Smart score raw: ", smartScoreRaw);
+
+        const cleanJson = smartScoreRaw!.replace(/```json|```/g, '').trim();
+        const smartScoreObj = JSON.parse(cleanJson);
+        console.log("Impact Smart score obj: ", smartScoreObj);
+
+        const overallScore = deterministicScore * 0.5 + (+smartScoreObj['impact_score']) * 0.5;
+        console.log("IMPACT Overall score: ", overallScore);
+        return overallScore;
+    }
+
+    async getCVScores(file: Express.Multer.File) {
+        const [keywordsScore, layoutScore, impactScore] = await Promise.all([
+            this.getKeywordsScore(file),
+            this.getLayoutScore(file),
+            this.getImpactScore(file)
+        ]);
+        return { keywordsScore, layoutScore, impactScore };
     }
 }

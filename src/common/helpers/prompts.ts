@@ -152,3 +152,41 @@ Output Format (Strict JSON):
 Resume Text:
 [RESUME_TEXT]
 `;
+
+export const CV_SMART_IMPACT_SCORE_PROMPT = `
+Role: Senior Talent Acquisition Partner & Business Operations Expert.
+Task: Evaluate the "Value Creation" and "Professional Impact" of the candidate based on their specific field.
+
+Target Role: [ROLE_TAG]
+
+Evaluation Criteria:
+1. QUANTIFICATION (The Numbers): Does the candidate use metrics to back their claims? 
+   - Tech: Performance %, User count, Uptime.
+   - Non-Tech: Budget saved, Revenue generated, Time-to-hire, Conversion rates, Team size, Project scope ($).
+2. COMPLEXITY & PROBLEM SOLVING: Assess the difficulty of the challenges faced.
+   - Tech: System architecture, Algorithms.
+   - Non-Tech: Change management, Conflict resolution, Navigating regulations, Strategic planning, High-stakes negotiations.
+3. RESULTS-FIRST PHRASING: Does the candidate emphasize the "Output" rather than just the "Input"? (e.g., "Increased sales by X" vs. "Responsible for sales").
+4. SENIORITY SIGNALS: Does the language reflect leadership and initiative? (e.g., "Spearheaded", "Transformed", "Optimized", "Led").
+
+Pareto Improvement Strategy (80/20 Rule):
+Identify exactly 3 bullet points that are "task-oriented" and rewrite them to be "result-oriented". Focus on the 20% of the text that conveys 80% of the candidate's professional value.
+
+Output Format (Strict JSON):
+{
+  "impact_score": 0-100,
+  "impact_summary": "A brief professional evaluation of the candidate's track record.",
+  "key_achievements_identified": ["The 3 most impressive highlights found"],
+  "pareto_improvements": [
+    {
+      "original_text": "The original task-based sentence",
+      "improved_text": "The new result-based sentence with placeholder for metrics if missing",
+      "why_it_works": "Explanation of how this shift demonstrates higher value"
+    }
+  ],
+  "overall_feedback": "How the candidate can better position themselves as a high-value asset."
+}
+
+Resume Text:
+[RESUME_TEXT]
+`;
