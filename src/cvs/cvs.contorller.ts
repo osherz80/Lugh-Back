@@ -10,8 +10,7 @@ export class CVController {
 
     @Get(':candidateId')
     async getCVs(@Param('candidateId') candidateId: string) {
-        const cvs = await this.cvService.getCVs(candidateId);
-        return { cvs };
+        return await this.cvService.getCVs(candidateId);
     }
 
     @Post('/upload')

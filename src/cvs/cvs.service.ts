@@ -392,14 +392,13 @@ export class CVService {
     async getCVs(candidateId: string) {
         try {
             console.log("getting cvs for candidate: ", candidateId);
-            const cvs = await this.db.query.cvs.findMany({
+            return await this.db.query.cvs.findMany({
                 where: (cvs) => eq(cvs.candidateId, candidateId),
                 columns: {
                     embedding: false,
                     content: false,
                 }
             })
-            return cvs;
         } catch (err) {
             console.log("error getting cvs", err)
             throw new Error("error getting cvs")
