@@ -69,7 +69,8 @@ export class CVService {
 
         const fileType = getFileType(file.mimetype)
         const fileRawText = await parseMap[fileType](file)
-        return fileRawText;
+        const cleanCVText = cleanText(fileRawText)
+        return cleanCVText;
     }
 
     async getRoleTag(text: string): Promise<RoleTag> {
@@ -353,19 +354,38 @@ export class CVService {
         }
     }
 
-    async getCVFullAnalysis(file: Express.Multer.File): Promise<CVFullAnalysis> {
-        const cvText = await this.parseCV(file);
-        const cvCleanText = cleanText(cvText);
-        const { roleTag } = await this.getRoleTag(cvCleanText);
+    async getCVFullAnalysis(cvText: string, roleTag: string, file: Express.Multer.File): Promise<CVFullAnalysis> {
         const [keywords, layout, impact, ats] = await Promise.all([
-            this.keywordsAnalysis(cvCleanText, roleTag),
-            this.layoutAnalysis(cvCleanText),
-            this.impactAnalysis(cvCleanText, roleTag),
-            this.ATSAnalysis(file, cvCleanText, roleTag)
+            this.keywordsAnalysis(cvText, roleTag),
+            this.layoutAnalysis(cvText),
+            this.impactAnalysis(cvText, roleTag),
+            this.ATSAnalysis(file, cvText, roleTag)
         ]);
 
         const score = calculateOverallScore({ ats, layout, keywords, impact });
         console.log("Final score: ", score);
         return { score, ats, layout, keywords, impact, tips: ats.tips };
+    }
+
+    async uploadCv(file: Express.Multer.File, userId: string) {
+        try {
+            const cvCleanText = await this.parseCV(file);
+            const { roleTag } = await this.getRoleTag(cvCleanText);
+            const cvAnalysis = await this.getCVFullAnalysis(cvCleanText, roleTag, file)
+            const cv = await this.db.insert(schema.cvs).values({
+                candidateId: userId,
+                content: cvCleanText,
+                fileName: file.originalname,
+                atsScore: cvAnalysis.ats.overallScore,
+                impactScore: cvAnalysis.impact.overallScore,
+                keywordsScore: cvAnalysis.keywords.overallScore,
+                layoutScore: cvAnalysis.layout.overallScore,
+                overallScore: cvAnalysis.score,
+                roleTag: roleTag,
+            })
+        } catch (err) {
+            console.log("error uploading cv", err)
+            throw new Error("error uploading cv")
+        }
     }
 }
