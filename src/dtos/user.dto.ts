@@ -5,6 +5,7 @@ export class UserDto {
     username: string | null;
     email: string;
     profilePicture: string | null;
+    hasCvs: boolean;
     candidate?: {
         userId: string;
         name: string;
@@ -20,17 +21,10 @@ export class UserDto {
         this.username = user.username;
         this.email = user.email;
         this.profilePicture = user.profilePicture;
+        this.hasCvs = false;
 
-        if (user.candidate) {
-            this.candidate = {
-                userId: user.candidate.userId,
-                name: user.candidate.name,
-                cvs: (user.candidate.cvs || []).map(cv => ({
-                    id: cv.id,
-                    content: cv.content,
-                    createdAt: cv.createdAt
-                }))
-            };
+        if (user.candidate?.cvs && user.candidate.cvs.length > 0) {
+            this.hasCvs = true;
         }
     }
 }

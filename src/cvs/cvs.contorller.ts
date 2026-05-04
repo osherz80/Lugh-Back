@@ -8,6 +8,12 @@ import { CVFileValidator } from './cvs.validator';
 export class CVController {
     constructor(private readonly cvService: CVService) { }
 
+    @Get()
+    async getCVs(@Query('candidateId') candidateId: string) {
+        const cvs = await this.cvService.getCVs(candidateId);
+        return { cvs };
+    }
+
     @Post('/upload')
     @UseInterceptors(FileInterceptor('file'))
     async uploadCV(

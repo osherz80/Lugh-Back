@@ -388,4 +388,15 @@ export class CVService {
             throw new Error("error uploading cv")
         }
     }
+
+    async getCVs(candidateId: string) {
+        try {
+            console.log("getting cvs for candidate: ", candidateId);
+            const cvs = await this.db.select().from(schema.cvs).where(eq(schema.cvs.candidateId, candidateId));
+            return cvs;
+        } catch (err) {
+            console.log("error getting cvs", err)
+            throw new Error("error getting cvs")
+        }
+    }
 }
