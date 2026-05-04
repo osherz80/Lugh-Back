@@ -7,11 +7,32 @@ const parseAiResponse = (response: string) => {
     return parsedResponse;
 }
 
+export const GEMINI_FREE_MODELS = {
+    // מודלים מסדרת 3.1 (הכי חדשים)
+    GEMINI_3_1_FLASH_LITE: "gemini-3.1-flash-lite-preview", // הכי מהיר וחסכוני
+    GEMINI_3_1_PRO: "gemini-3.1-pro-preview",               // הכי חכם, מכסה נמוכה
+
+    // מודלים מסדרת 3.0
+    GEMINI_3_FLASH: "gemini-3-flash-preview",              // איזון מעולה לשימוש יומיומי
+
+    // מודלים מסדרת 2.5
+    GEMINI_2_5_FLASH: "gemini-2.5-flash",
+
+    // מודלים מסדרת 1.5 (Stable)
+    GEMINI_1_5_FLASH: "gemini-1.5-flash",
+    GEMINI_1_5_PRO: "gemini-1.5-pro",
+
+    // מודלי Gemma 4 (Instruction Tuned)
+    GEMMA_4_31B: "gemma-4-31b-it",
+    GEMMA_4_26B_MOE: "gemma-4-26b-a4b-it",
+    GEMMA_4_9B: "gemma-4-9b-it"
+} as const;
+
 export const askAi = async <T>(prompt: string): Promise<T | undefined> => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
+            model: GEMINI_FREE_MODELS.GEMINI_3_FLASH,
             contents: prompt,
 
         });
@@ -22,24 +43,6 @@ export const askAi = async <T>(prompt: string): Promise<T | undefined> => {
     } catch (error) {
         console.error('Failed to ask ai: ', error);
         throw new Error('Failed to ask ai: ' + error.message);
-    }
-}
-
-export const askAiLite = async <T>(prompt: string): Promise<T | undefined> => {
-    try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash-lite",
-            contents: prompt,
-
-        });
-
-        if (response.text) {
-            return parseAiResponse(response.text);
-        }
-    } catch (error) {
-        console.error('Failed to ask ai lite: ', error);
-        throw new Error('Failed to ask ai lite: ' + error.message);
     }
 }
 

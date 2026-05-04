@@ -4,7 +4,7 @@ import * as mammoth from "mammoth";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { eq } from "drizzle-orm";
 
-import { askAi, askAiLite } from "src/common/helpers/ai";
+import { askAi } from "src/common/helpers/ai";
 import { CV_CHECK_PATTERNS, FILE_TYPES_MAP } from "src/common/helpers/consts";
 import { cleanText, getFileType } from "src/common/helpers/utils";
 import { calculateOverallScore, createOrderedPageRender } from "./utils/utils";
@@ -77,7 +77,7 @@ export class CVService {
         try {
             const prompt = prompts.CV_ROLE_TAG_EXTRACTOR_PROMPT
                 .replace('[RESUME_TEXT]', text);
-            const roleTag = await askAiLite<RoleTag>(prompt);
+            const roleTag = await askAi<RoleTag>(prompt);
             if (!roleTag) {
                 console.log("error getting Role tag: ", roleTag);
                 throw new Error("Could not extract role tag");
@@ -126,7 +126,7 @@ export class CVService {
 
         try {
 
-            const analysis = await askAiLite<CVSmartAnalysis>(prompt);
+            const analysis = await askAi<CVSmartAnalysis>(prompt);
             if (!analysis) {
                 console.log("error getting Smart ATS analysis: ", analysis);
                 throw new Error("Could not extract Smart ATS analysis");
@@ -146,7 +146,7 @@ export class CVService {
             console.log("Deterministic ATS score: ", deterministicScore);
             const { score: smartScore, tips } = await this.smartATSAnalysis(cvText, roleTag);
             console.log("Smart ATS score: ", smartScore);
-            const overallScore = deterministicScore * 0.5 + smartScore * 0.5;
+            const overallScore = Math.floor(deterministicScore * 0.5 + smartScore * 0.5);
             console.log("Overall ATS score: ", overallScore);
             return { overallScore, tips, deterministicScore, smartScore };
         } catch (error) {
@@ -212,7 +212,7 @@ export class CVService {
             const prompt = prompts.CV_SMART_LAYOUT_SCORE_PROMPT
                 .replace('[RESUME_TEXT]', cvText);// TODO: check if should send src file
 
-            const score = await askAiLite<CVSmartAnalysis>(prompt);
+            const score = await askAi<CVSmartAnalysis>(prompt);
             if (!score) {
                 console.log("error getting full layout score")
                 throw new Error("error getting full layout score")
@@ -231,7 +231,7 @@ export class CVService {
             console.log("LAYOUT Deterministic score: ", deterministicScore);
             const { score: smartScore, tips } = await this.smartLayoutAnalysis(cvText);
             console.log("LAYOUT Smart score: ", smartScore);
-            const overallScore = deterministicScore * 0.5 + smartScore * 0.5;
+            const overallScore = Math.floor(deterministicScore * 0.5 + smartScore * 0.5);
             console.log("LAYOUT Overall score: ", overallScore);
             return { overallScore, tips, deterministicScore, smartScore };
         } catch (err) {
@@ -250,7 +250,7 @@ export class CVService {
                 .replace('[ROLE_TAG]', roleTag!)
                 .replace('[RESUME_TEXT]', cvText);
 
-            const score = await askAiLite<CVSmartAnalysis>(prompt);
+            const score = await askAi<CVSmartAnalysis>(prompt);
             if (!score) {
                 console.log("error getting smart keywords score")
                 throw new Error("error getting smart keywords score")
@@ -270,7 +270,7 @@ export class CVService {
             const { score: smartScore, tips } = await this.smartKeywordsAnalysis(cvText, roleTag);
             console.log("KEYWORDS Smart score: ", smartScore);
             // const overallScore = deterministicScore * 0.5 + smartScore * 0.5;
-            const overallScore = smartScore;
+            const overallScore = Math.floor(smartScore);
             console.log("KEYWORDS Overall score: ", overallScore);
             return { overallScore, tips, deterministicScore, smartScore };
         } catch (error) {
@@ -326,7 +326,7 @@ export class CVService {
                 .replace('[ROLE_TAG]', roleTag!)
                 .replace('[RESUME_TEXT]', cvText);
 
-            const score = await askAiLite<CVSmartAnalysis>(prompt);
+            const score = await askAi<CVSmartAnalysis>(prompt);
             if (!score) {
                 console.log("error getting smart impact score")
                 throw new Error("error getting smart impact score")
@@ -345,7 +345,7 @@ export class CVService {
             console.log("Impact Deterministic score: ", deterministicScore);
             const { score: smartScore, tips } = await this.smartImpactAnalysis(cvText, roleTag);
             console.log("Impact Smart score: ", smartScore);
-            const overallScore = deterministicScore * 0.5 + smartScore * 0.5;
+            const overallScore = Math.floor(deterministicScore * 0.5 + smartScore * 0.5);
             console.log("IMPACT Overall score: ", overallScore);
             return { overallScore, tips, deterministicScore, smartScore };
         } catch (err) {

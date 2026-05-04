@@ -50,5 +50,5 @@ export const calculateOverallScore = (analysis: Record<string, CVMetricAnalysis>
     for (const metric in ANALYSIS_METRICS) {
         overallScore += analysis[ANALYSIS_METRICS[metric]].overallScore * METRICS_WEIGHTS[ANALYSIS_METRICS[metric]];
     }
-    return Math.round(overallScore);
+    return Math.floor(overallScore);
 }
