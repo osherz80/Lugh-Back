@@ -4,7 +4,7 @@ Task: Analyze the provided resume text and categorize the candidate into exactly
 
 Constraints:
 
-Output MUST be a single string (the job title).
+Output MUST be a JSON object with two keys: roleTag (string) and confidence (float 0-1).
 
 NO preamble, NO explanation, NO formatting, and NO punctuation.
 
@@ -17,6 +17,7 @@ Resume Text:
 
 Final Output (JSON) example: {
     "roleTag": "Backend Engineer"
+    "confidence": 0.99,
     }`
 
 export const CV_SMART_ATS_SCORE_PROMPT = `Role: You are a professional ATS (Applicant Tracking System) Auditor.
@@ -50,21 +51,21 @@ Output Format (Strict JSON):
 
 JSON
 {
-    "ats_score": "integer (0-100)",
+    "score": "integer (0-100)",
     "analysis": {
         "structural_parsing": { "status": "Pass/Fail/Caution", "details": "string" },
         "chronology": { "status": "Correct/Incorrect", "details": "string" },
         "keyword_alignment": { "score": "0-100", "missing_key_terms": ["list"] },
         "completeness": { "missing_sections": ["list"] }
-        },
-        "pareto_tips": [
+    },
+    "tips": [
             { 
-                "tip": "Short, punchy instruction", 
-                "impact_percent": "integer (e.g., 15)", 
-                "reason": "Explain briefly why this specific change is required to improve the ATS score" 
-                }
-                ]
-                }`
+                "title": "string (2-5 words)",
+                "tip": "string (10-40 words)", 
+                "gain": "integer (0-100), represents the estimated increase in score" 
+            }
+        ]
+}`
 
 
 export const CV_SMART_LAYOUT_SCORE_PROMPT = `
@@ -102,19 +103,23 @@ Identify the top 3 actionable improvements that will yield the most significant 
 
 Output Format (Strict JSON):
 {
-    "layout_score": "integer (0-100)",
-    "ux_analysis": {
+    "score": "integer (0-100)",
+    "analysis": {
         "hierarchy": { "status": "Good/Fair/Poor", "details": "string" },
         "scannability": { "status": "High/Medium/Low", "details": "string" },
         "action_verbs_usage": ["list of found strong verbs"],
         "parsing_safety": "string"
-        },
-        "improvement_tips": [
-            { "area": "Hierarchy/Scannability/Density", "tip": "string", "impact": "High/Medium" }
-            ]
+    },
+    "tips": [
+            { 
+                "title": "string (2-5 words)",
+                "tip": "string (10-40 words)", 
+                "gain": "integer (0-100), represents the estimated increase in score" 
             }
+        ]
+}
             
-            Resume Text:
+Resume Text:
 [RESUME_TEXT]
 `;
 
@@ -126,27 +131,28 @@ Target Role: [ROLE_TAG]
 
 Analysis Guidelines:
 1. INDUSTRY-SPECIFIC KEYWORDS: Identify core professional competencies (Tech: Frameworks/Cloud; Non-Tech: Methodologies/Tools).
-2. ROLE RELEVANCE: Evaluate alignment with 2026 market expectations for a [ROLE_TAG].
-3. SENIORITY ALIGNMENT: Check if the vocabulary matches the candidate's years of experience (Strategic vs. Execution).
+2. ROLE RELEVANCE: Evaluate alignment with current market expectations for a [ROLE_TAG].
+3. EXPERIENCE LEVEL ALIGNMENT: Check if the vocabulary matches the candidate's years of experience (Strategic vs. Execution).
 4. MODERNITY: Is the candidate using current industry-standard tools and modern approaches?
 
 Pareto Improvement Strategy (80/20 Rule):
-Identify exactly 3 actionable improvements that will yield the most significant increase in the Keyword/ATS score. Focus on "Low Effort, High Impact" changes—specifically keywords or phrasing that bridge the gap between the current text and high-ranking industry profiles.
+Identify 3 actionable improvements that will yield the most significant score increase. Focus on "Low Effort, High Impact" changes—specifically keywords or phrasing that bridge the gap between the current text and high-ranking industry profiles.
 
 Output Format (Strict JSON):
 {
-  "keywords_score": 0-100,
-  "tech_stack_summary": "string",
-  "top_skills_found": ["skill1", "skill2"],
-  "market_relevance": "High/Medium/Low",
-  "improvement_tips": [
-    {
-      "area": "Keywords/Competencies",
-      "tip": "Specific wording to add or replace",
-      "impact": "High/Medium"
-    }
-  ],
-  "feedback": "string"
+  "score": "integer (0-100)",
+  "analysis": {
+    "tech_stack_summary": "string",
+    "top_skills_found": ["skill1", "skill2"],
+    "market_relevance": "High/Medium/Low"
+  },
+  "tips": [
+            { 
+                "title": "string (2-5 words)",
+                "tip": "string (10-40 words)", 
+                "gain": "integer (0-100), represents the estimated increase in score" 
+            }
+        ]
 }
 
 Resume Text:
@@ -174,17 +180,18 @@ Identify exactly 3 bullet points that are "task-oriented" and rewrite them to be
 
 Output Format (Strict JSON):
 {
-  "impact_score": 0-100,
-  "impact_summary": "A brief professional evaluation of the candidate's track record.",
-  "key_achievements_identified": ["The 3 most impressive highlights found"],
-  "pareto_improvements": [
-    {
-      "original_text": "The original task-based sentence",
-      "improved_text": "The new result-based sentence with placeholder for metrics if missing",
-      "why_it_works": "Explanation of how this shift demonstrates higher value"
-    }
-  ],
-  "overall_feedback": "How the candidate can better position themselves as a high-value asset."
+  "score": "integer (0-100)",
+  "analysis": {
+    "impact_summary": "A brief professional evaluation of the candidate's track record.",
+    "key_achievements_identified": ["The 3 most impressive highlights found"],
+  },
+  "tips": [
+            { 
+                "title": "string (2-5 words)",
+                "tip": "string (10-40 words)", 
+                "gain": "integer (0-100), represents the estimated increase in score" 
+            }
+        ],
 }
 
 Resume Text:

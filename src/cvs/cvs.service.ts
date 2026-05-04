@@ -1,12 +1,18 @@
-import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import { Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { LoadParameters, PDFParse } from 'pdf-parse';
 import * as mammoth from "mammoth";
+import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { eq } from "drizzle-orm";
 
 import { askAi, askAiLite } from "src/common/helpers/ai";
-import { CV_CHECK_PATTERNS, FILE_TYPES_MAP, mimeMap } from "src/common/helpers/consts";
-import { createOrderedPageRender } from "src/common/helpers/utils";
+import { CV_CHECK_PATTERNS, FILE_TYPES_MAP } from "src/common/helpers/consts";
+import { cleanText, getFileType } from "src/common/helpers/utils";
+import { calculateOverallScore, createOrderedPageRender } from "./utils/utils";
 import * as prompts from "src/common/helpers/prompts";
-import { Multer } from "multer";
+import { DRIZZLE } from "src/drizzle/drizzle.module";
+import * as schema from '../db/schema/index';
+import { CVFullAnalysis, CVMetricAnalysis, CVDeterministicAnalysis, RoleTag, CVSmartAnalysis } from "./types/cv";
+
 
 interface ExtendedLoadParameters extends LoadParameters {
     pagerender?: (pageData: any) => Promise<string>;
@@ -14,11 +20,9 @@ interface ExtendedLoadParameters extends LoadParameters {
 
 @Injectable()
 export class CVService {
-    getCVFileType(mimeType: string) {
-        return mimeMap[mimeType] || 'unknown';
-    }
+    constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) { }
 
-    async parseDocx(file: Express.Multer.File): Promise<string | undefined> {
+    async parseDocx(file: Express.Multer.File): Promise<string> {
         try {
             const result = await mammoth.extractRawText({ buffer: file.buffer });
 
@@ -30,11 +34,12 @@ export class CVService {
             }
             return rawText;
         } catch (error) {
-            throw new InternalServerErrorException('Failed to process DOCX file');
+            console.log("error parsing docx: ", error);
+            throw new Error('Failed to parse DOCX file: ' + error.message);
         }
     }
 
-    async parsePdf(file: Express.Multer.File): Promise<string | undefined> {
+    async parsePdf(file: Express.Multer.File): Promise<string> {
         let parser: PDFParse | null = null;
         try {
             const data = Uint8Array.from(file.buffer);
@@ -47,6 +52,7 @@ export class CVService {
             const rawText = (await parser.getText()).text;
             return rawText;
         } catch (error) {
+            console.log("error parsing pdf: ", error);
             throw new Error('Failed to parse PDF: ' + error.message);
         } finally {
             if (parser) {
@@ -61,27 +67,31 @@ export class CVService {
             [FILE_TYPES_MAP.docx]: this.parseDocx,
         }
 
-        const fileType = this.getCVFileType(file.mimetype)
+        const fileType = getFileType(file.mimetype)
         const fileRawText = await parseMap[fileType](file)
         return fileRawText;
     }
 
-    async getRoleTag(text: string) {
+    async getRoleTag(text: string): Promise<RoleTag> {
         try {
             const prompt = prompts.CV_ROLE_TAG_EXTRACTOR_PROMPT
                 .replace('[RESUME_TEXT]', text);
-            const roleTag = await askAiLite(prompt);
+            const roleTag = await askAiLite<RoleTag>(prompt);
+            if (!roleTag) {
+                console.log("error getting Role tag: ", roleTag);
+                throw new Error("Could not extract role tag");
+            }
             console.log("Role tag: ", roleTag);
             return roleTag;
         } catch (error) {
             console.error('Failed to extract role tag: ', error);
-            return undefined;
+            throw new Error('Failed to extract role tag: ' + error.message);
         }
     }
 
-    deterministicATSScore(cvText: string, file: Express.Multer.File) {
+    deterministicATSAnalysis(cvText: string, file: Express.Multer.File): CVDeterministicAnalysis {
         let score = 100;
-        const fileType = this.getCVFileType(file.mimetype)
+        const fileType = getFileType(file.mimetype)
         if (fileType !== FILE_TYPES_MAP.pdf) {
             console.log('bad file type', file.mimetype)
             score -= 20;
@@ -105,38 +115,46 @@ export class CVService {
             wordCount > 1500 && console.log("CV is too long -15pt")
         }
 
-        return Math.max(0, score);
+        return { score: Math.max(0, score) }
     }
 
-    cleanText(text: string): string {
-        return text
-            .replace(/\s\s+/g, ' ') // החלפת רווחים כפולים/מרובים ברווח אחד
-            .replace(/\n\s+\n/g, '\n\n') // ניקוי שורות ריקות עם רווחים
-            .trim();
-    }
-
-    async smartATSScore(cvText: string, roleTag: string) {
+    async smartATSAnalysis(cvText: string, roleTag: string): Promise<CVSmartAnalysis> {
         const prompt = prompts.CV_SMART_ATS_SCORE_PROMPT
             .replace('[TARGET_ROLE]', roleTag!)
             .replace('[RESUME_TEXT]', cvText);
 
-        const score = await askAi(prompt);
-        console.log("Smart score: ", score);
+        try {
 
-        return score;
+            const analysis = await askAiLite<CVSmartAnalysis>(prompt);
+            if (!analysis) {
+                console.log("error getting Smart ATS analysis: ", analysis);
+                throw new Error("Could not extract Smart ATS analysis");
+            }
+            console.log("Smart ATS analysis: ", analysis);
+            return analysis;
+        } catch (error) {
+            console.log("error getting ATS Smart analysis: ", error);
+            throw new Error("Could not extract ATS Smart analysis");
+        }
     }
 
-    async getAtstsScore(file: Express.Multer.File, cvText: string, roleTag: string) {
-        const deterministicScore = this.deterministicATSScore(cvText, file);
-        console.log("Deterministic ATS score: ", deterministicScore);
-        const smartScore = await this.smartATSScore(cvText, roleTag);
-        console.log("Smart ATS score: ", smartScore);
-        const overallScore = deterministicScore * 0.5 + (+smartScore!['ats_score']) * 0.5;
-        console.log("Overall ATS score: ", overallScore);
-        return overallScore;
+    async ATSAnalysis(file: Express.Multer.File, cvText: string, roleTag: string): Promise<CVMetricAnalysis> {
+        try {
+
+            const { score: deterministicScore } = this.deterministicATSAnalysis(cvText, file);
+            console.log("Deterministic ATS score: ", deterministicScore);
+            const { score: smartScore, tips } = await this.smartATSAnalysis(cvText, roleTag);
+            console.log("Smart ATS score: ", smartScore);
+            const overallScore = deterministicScore * 0.5 + smartScore * 0.5;
+            console.log("Overall ATS score: ", overallScore);
+            return { overallScore, tips, deterministicScore, smartScore };
+        } catch (error) {
+            console.error("error getting full ATS score: ", error);
+            throw new Error("Could not get full ATS score");
+        }
     }
 
-    deterministicLayoutScore(cvText: string) {
+    deterministicLayoutAnalysis(cvText: string): CVDeterministicAnalysis {
         let score = 100;
 
         // 1. עקביות בפורמט תאריכים
@@ -185,53 +203,82 @@ export class CVService {
             console.log("Layout: Bullet points are too wordy (-10pts)");
         }
 
-        return Math.max(0, score);
+        return { score: Math.max(0, score) }
     }
 
-    async smartLayoutScore(cvText: string) {
+    async smartLayoutAnalysis(cvText: string): Promise<CVSmartAnalysis> {
+        try {
+            const prompt = prompts.CV_SMART_LAYOUT_SCORE_PROMPT
+                .replace('[RESUME_TEXT]', cvText);// TODO: check if should send src file
 
-        const prompt = prompts.CV_SMART_LAYOUT_SCORE_PROMPT
-            .replace('[RESUME_TEXT]', cvText);// TODO: check if should send src file
-
-        const score = await askAi(prompt);
-        console.log("SmartLayout score: ", score);
-        return score
+            const score = await askAiLite<CVSmartAnalysis>(prompt);
+            if (!score) {
+                console.log("error getting full layout score")
+                throw new Error("error getting full layout score")
+            }
+            console.log("SmartLayout score: ", score);
+            return score
+        } catch (err) {
+            console.log("error getting full layout score")
+            throw new Error("error getting full layout score")
+        }
     }
 
-    async getLayoutScore(cvText: string) {
-        const deterministicScore = await this.deterministicLayoutScore(cvText);
-        console.log("LAYOUT Deterministic score: ", deterministicScore);
-        const smartScore = await this.smartLayoutScore(cvText);
-        console.log("LAYOUT Smart score: ", smartScore);
-        const overallScore = deterministicScore * 0.5 + (+smartScore!['layout_score']) * 0.5;
-        console.log("LAYOUT Overall score: ", overallScore);
-        return overallScore;
+    async layoutAnalysis(cvText: string): Promise<CVMetricAnalysis> {
+        try {
+            const { score: deterministicScore } = this.deterministicLayoutAnalysis(cvText);
+            console.log("LAYOUT Deterministic score: ", deterministicScore);
+            const { score: smartScore, tips } = await this.smartLayoutAnalysis(cvText);
+            console.log("LAYOUT Smart score: ", smartScore);
+            const overallScore = deterministicScore * 0.5 + smartScore * 0.5;
+            console.log("LAYOUT Overall score: ", overallScore);
+            return { overallScore, tips, deterministicScore, smartScore };
+        } catch (err) {
+            console.log("error getting full layout score", err)
+            throw new Error("error getting full layout score")
+        }
     }
 
-    deterministicKeywordsScore(cvText: string) {
-        return 0;// TODO: implement after constructing vocabulary
+    deterministicKeywordsAnalysis(cvText: string): CVDeterministicAnalysis {
+        return { score: 0 };// TODO: implement after constructing vocabulary
     }
 
-    async smartKeywordsScore(cvText: string, roleTag: string) {
-        const prompt = prompts.CV_SMART_KEYWORDS_SCORE_PROMPT
-            .replace('[ROLE_TAG]', roleTag!)
-            .replace('[RESUME_TEXT]', cvText);
+    async smartKeywordsAnalysis(cvText: string, roleTag: string): Promise<CVSmartAnalysis> {
+        try {
+            const prompt = prompts.CV_SMART_KEYWORDS_SCORE_PROMPT
+                .replace('[ROLE_TAG]', roleTag!)
+                .replace('[RESUME_TEXT]', cvText);
 
-        const score = await askAi(prompt);
-        console.log("Smart score: ", score);
-
-        return score;
+            const score = await askAiLite<CVSmartAnalysis>(prompt);
+            if (!score) {
+                console.log("error getting smart keywords score")
+                throw new Error("error getting smart keywords score")
+            }
+            console.log("Smart keywords score: ", score);
+            return score;
+        } catch (err) {
+            console.log("error getting smart keywords score")
+            throw new Error("error getting smart keywords score")
+        }
     }
 
-    async getKeywordsScore(cvText: string, roleTag: string) {
-        const deterministicScore = this.deterministicKeywordsScore(cvText);
-        const smartScore = await this.smartKeywordsScore(cvText, roleTag);
-        const overallScore = +smartScore!['keywords_score'];
-        console.log("KEYWORDS Overall score: ", overallScore);
-        return overallScore;
+    async keywordsAnalysis(cvText: string, roleTag: string): Promise<CVMetricAnalysis> {
+        try {
+            const { score: deterministicScore } = this.deterministicKeywordsAnalysis(cvText);
+            console.log("KEYWORDS Deterministic score: ", deterministicScore);
+            const { score: smartScore, tips } = await this.smartKeywordsAnalysis(cvText, roleTag);
+            console.log("KEYWORDS Smart score: ", smartScore);
+            // const overallScore = deterministicScore * 0.5 + smartScore * 0.5;
+            const overallScore = smartScore;
+            console.log("KEYWORDS Overall score: ", overallScore);
+            return { overallScore, tips, deterministicScore, smartScore };
+        } catch (error) {
+            console.log("error getting full keywords analysis")
+            throw new Error("error getting full keywords analysis")
+        }
     }
 
-    deterministicImpactScore(text: string) {
+    deterministicImpactAnalysis(text: string): CVDeterministicAnalysis {
         // 1. זיהוי נתונים כמותיים: מספרים גדולים, אחוזים, סימני פלוס, דולר וכו'
         // מחפש: 200,000+, 99.9%, $10k, 50M
         const metricsRegex = CV_CHECK_PATTERNS.METRICS;
@@ -269,43 +316,56 @@ export class CVService {
         //     // },
         //     score: Math.round(impactScore)
         // };
-        return Math.round(impactScore);
+        return { score: Math.round(impactScore) };
     }
 
-    async smartImpactScore(cvText: string, roleTag: string) {
-        const prompt = prompts.CV_SMART_IMPACT_SCORE_PROMPT
-            .replace('[ROLE_TAG]', roleTag!)
-            .replace('[RESUME_TEXT]', cvText);
+    async smartImpactAnalysis(cvText: string, roleTag: string): Promise<CVSmartAnalysis> {
+        try {
+            const prompt = prompts.CV_SMART_IMPACT_SCORE_PROMPT
+                .replace('[ROLE_TAG]', roleTag!)
+                .replace('[RESUME_TEXT]', cvText);
 
-        const score = await askAi(prompt);
-        console.log("SmartImpact score: ", score);
-        return score
+            const score = await askAiLite<CVSmartAnalysis>(prompt);
+            if (!score) {
+                console.log("error getting smart impact score")
+                throw new Error("error getting smart impact score")
+            }
+            console.log("SmartImpact score: ", score);
+            return score
+        } catch (err) {
+            console.log("error getting smart impact score")
+            throw new Error("error getting smart impact score")
+        }
     }
 
-    async getImpactScore(cvText: string, roleTag: string) {
-        const deterministicScore = this.deterministicImpactScore(cvText);
-        console.log("Impact Deterministic score: ", deterministicScore);
-        const smartScore = await this.smartImpactScore(cvText, roleTag);
-        console.log("Impact Smart score: ", smartScore);
-
-        const overallScore = deterministicScore * 0.5 + (+smartScore!['impact_score']) * 0.5;
-        console.log("IMPACT Overall score: ", overallScore);
-        return overallScore;
+    async impactAnalysis(cvText: string, roleTag: string): Promise<CVMetricAnalysis> {
+        try {
+            const { score: deterministicScore } = this.deterministicImpactAnalysis(cvText);
+            console.log("Impact Deterministic score: ", deterministicScore);
+            const { score: smartScore, tips } = await this.smartImpactAnalysis(cvText, roleTag);
+            console.log("Impact Smart score: ", smartScore);
+            const overallScore = deterministicScore * 0.5 + smartScore * 0.5;
+            console.log("IMPACT Overall score: ", overallScore);
+            return { overallScore, tips, deterministicScore, smartScore };
+        } catch (err) {
+            console.log("error getting full impact score")
+            throw new Error("error getting full impact score")
+        }
     }
 
-    async getCVScore(file: Express.Multer.File) {
+    async getCVFullAnalysis(file: Express.Multer.File): Promise<CVFullAnalysis> {
         const cvText = await this.parseCV(file);
-        const cvCleanText = this.cleanText(cvText!);
-        const roleTag = await this.getRoleTag(cvCleanText!);
-        const [keywordsScore, layoutScore, impactScore, atsScore] = await Promise.all([
-            this.getKeywordsScore(cvCleanText, roleTag!),
-            this.getLayoutScore(cvCleanText),
-            this.getImpactScore(cvCleanText, roleTag!),
-            this.getAtstsScore(file, cvCleanText!, roleTag!)
+        const cvCleanText = cleanText(cvText);
+        const { roleTag } = await this.getRoleTag(cvCleanText);
+        const [keywords, layout, impact, ats] = await Promise.all([
+            this.keywordsAnalysis(cvCleanText, roleTag),
+            this.layoutAnalysis(cvCleanText),
+            this.impactAnalysis(cvCleanText, roleTag),
+            this.ATSAnalysis(file, cvCleanText, roleTag)
         ]);
 
-        const finalScore = keywordsScore * 0.25 + layoutScore * 0.2 + impactScore * 0.35 + atsScore * 0.2;
-        console.log("Final score: ", finalScore);
-        return { keywordsScore, layoutScore, impactScore, atsScore, finalScore };
+        const score = calculateOverallScore({ ats, layout, keywords, impact });
+        console.log("Final score: ", score);
+        return { score, ats, layout, keywords, impact, tips: ats.tips };
     }
 }

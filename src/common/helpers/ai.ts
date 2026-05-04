@@ -1,53 +1,64 @@
 import { GoogleGenAI } from "@google/genai";
 
 
-export const askAi = async (prompt: string) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const parseAiResponse = (response: string) => {
+    const cleanJson = response.replace(/```json|```/g, '').trim();
+    const parsedResponse = JSON.parse(cleanJson);
+    return parsedResponse;
+}
 
-    const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
+export const askAi = async <T>(prompt: string): Promise<T | undefined> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: prompt,
 
-    });
+        });
 
-    if (response.text) {
-
-        const cleanJson = response.text.replace(/```json|```/g, '').trim();
-        const smartScoreObj = JSON.parse(cleanJson);
-
-        return smartScoreObj;
-    } else {
-        return null;
+        if (response.text) {
+            return parseAiResponse(response.text);
+        }
+    } catch (error) {
+        console.error('Failed to ask ai: ', error);
+        throw new Error('Failed to ask ai: ' + error.message);
     }
 }
 
-export const askAiLite = async (prompt: string) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+export const askAiLite = async <T>(prompt: string): Promise<T | undefined> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash-lite",
+            contents: prompt,
 
-    const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-lite",
-        contents: prompt,
+        });
 
-    });
-    return response.text;
+        if (response.text) {
+            return parseAiResponse(response.text);
+        }
+    } catch (error) {
+        console.error('Failed to ask ai lite: ', error);
+        throw new Error('Failed to ask ai lite: ' + error.message);
+    }
 }
 
-/**
- * Generates an embedding vector for the provided text using Gemini's embedding model.
- * @param text The text to embed.
- * @returns A promise that resolves to an array of numbers representing the embedding.
- */
 export const getEmbedding = async (text: string): Promise<number[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const response = await ai.models.embedContent({
+            model: "gemini-embedding-001",
+            contents: text,
+        });
 
-    const response = await ai.models.embedContent({
-        model: "gemini-embedding-001",
-        contents: text,
-    });
+        if (!response.embeddings || response.embeddings.length === 0) {
+            console.error('Failed to generate embedding: No embeddings returned.');
+            throw new Error("Failed to generate embedding: No embeddings returned.");
+        }
 
-    if (!response.embeddings || response.embeddings.length === 0) {
-        throw new Error("Failed to generate embedding: No embeddings returned.");
+        return response.embeddings[0].values!;
+    } catch (error) {
+        console.error('Failed to get embedding: ', error);
+        throw new Error('Failed to get embedding: ' + error.message);
     }
-
-    return response.embeddings[0].values!;
 };
