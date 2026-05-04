@@ -4,7 +4,7 @@ import { candidates } from './index';
 
 export const users = pgTable('users', {
     id: uuid('id').primaryKey().defaultRandom(),
-    username: text('username'),
+    username: text('username').notNull(),
     email: text('email').notNull().unique(),
     password: text('password').notNull(),
     profilePicture: text('profile_picture'),

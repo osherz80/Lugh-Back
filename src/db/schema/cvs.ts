@@ -16,17 +16,14 @@ export const cvs = pgTable('cvs', {
 
     // Content Layers
     content: text('content').notNull(),
-    embedding: vector('embedding', { dimensions: 256 }),// TODO: add chunking
+    embedding: vector('embedding', { dimensions: 256 }),// TODO: add chunking(ColBERT)
 
-    // --- The Metrics (Flattened from JSONB) ---
+    // Metrics
     overallScore: integer('overall_score').default(0),
     atsScore: integer('ats_score').default(0),
     keywordsScore: integer('keywords_score').default(0),
     impactScore: integer('impact_score').default(0),
     layoutScore: integer('layout_score').default(0),
-
-    // Logic/State
-    isOutdated: boolean('is_outdated').default(false).notNull(),
 
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),

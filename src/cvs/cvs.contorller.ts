@@ -1,4 +1,4 @@
-import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException, Get, Query, Body } from '@nestjs/common';
+import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException, Get, Body, Param } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CVService } from './cvs.service';
 import { CVFileValidator } from './cvs.validator';
@@ -8,8 +8,8 @@ import { CVFileValidator } from './cvs.validator';
 export class CVController {
     constructor(private readonly cvService: CVService) { }
 
-    @Get()
-    async getCVs(@Query('candidateId') candidateId: string) {
+    @Get(':candidateId')
+    async getCVs(@Param('candidateId') candidateId: string) {
         const cvs = await this.cvService.getCVs(candidateId);
         return { cvs };
     }
