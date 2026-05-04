@@ -10,12 +10,12 @@ export class CVController {
 
     @Post('/upload')
     @UseInterceptors(FileInterceptor('file'))
-    async uploadCV(@UploadedFile(new CVFileValidator()) file: Express.Multer.File) {
+    async uploadCV(@UploadedFile(new CVFileValidator()) file: Express.Multer.File, @Query('userId') userId: string) {
         if (!file) {
             throw new BadRequestException('No file received!');
         }
 
-        const result = await this.cvService.getCVFullAnalysis(file);
+        const result = await this.cvService.uploadCv(file, userId);
         return result;
     }
 
