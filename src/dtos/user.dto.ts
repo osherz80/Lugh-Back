@@ -2,35 +2,20 @@ import { FullUser } from 'src/common/types/general';
 
 export class UserDto {
     id: string;
-    username: string | null;
+    username: string;
     email: string;
     profilePicture: string | null;
-    candidate?: {
-        userId: string;
-        name: string;
-        cvs: {
-            id: string;
-            content: string;
-            createdAt: Date | null;
-        }[];
-    } | null;
+    hasCv: boolean;
 
     constructor(user: FullUser) {
         this.id = user.id;
         this.username = user.username;
         this.email = user.email;
         this.profilePicture = user.profilePicture;
+        this.hasCv = false;
 
-        if (user.candidate) {
-            this.candidate = {
-                userId: user.candidate.userId,
-                name: user.candidate.name,
-                cvs: (user.candidate.cvs || []).map(cv => ({
-                    id: cv.id,
-                    content: cv.content,
-                    createdAt: cv.createdAt
-                }))
-            };
+        if (user.candidate?.cvs && user.candidate.cvs.length > 0) {
+            this.hasCv = true;
         }
     }
 }

@@ -100,7 +100,6 @@ export class AuthService {
         });
 
         return res.send({
-            isAuth: true,
             user,
         });
     };
@@ -123,11 +122,11 @@ export class AuthService {
         }
     }
 
-    async setCandidate(user: User): Promise<Candidate | undefined> {
+    async setCandidate(user: User): Promise<Candidate> {
         try {
             const [candidate] = await this.db.insert(candidates).values({
                 userId: user.id,
-                name: user.username!
+                name: user.username
             }).returning();
             return candidate;
         } catch (err: any) {

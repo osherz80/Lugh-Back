@@ -5,7 +5,7 @@ import { ParserModule } from './parser/parser.module';
 import { ConfigModule } from '@nestjs/config';
 import { DrizzleModule } from './drizzle/drizzle.module';
 import { JobsModule } from './jobs/job.module';
-import { CVModule } from './cv/cv.module';
+import { CVModule } from './cvs/cvs.module';
 import { AuthModule } from './auth/auth.module';
 
 
