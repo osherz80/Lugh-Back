@@ -32,7 +32,7 @@ export const askAi = async <T>(prompt: string): Promise<T | undefined> => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const response = await ai.models.generateContent({
-            model: GEMINI_FREE_MODELS.GEMINI_3_FLASH,
+            model: GEMINI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
             contents: prompt,
 
         });

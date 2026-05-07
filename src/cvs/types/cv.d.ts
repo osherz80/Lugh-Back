@@ -1,9 +1,12 @@
+import { AnalysisMetrics } from "src/common/types/general";
+
 export type RoleTag = {
     roleTag: string;
     confidence: number;
 }
 
 export type CVTip = {
+    category: AnalysisMetrics;
     title: string;
     tip: string;
     gain: number;
