@@ -22,10 +22,10 @@ Final Output (JSON) example: {
 
 export const CV_SMART_ATS_SCORE_PROMPT = `Role: You are a professional ATS (Applicant Tracking System) Auditor.
     
-    Task: Analyze the provided resume text for the role of: [TARGET_ROLE].
+Task: Analyze the provided resume text for the role of: [TARGET_ROLE].
     
-    Evaluation Rules:
-    1. CONTEXTUAL INTELLIGENCE: If you see "PostgreSQL" or "MongoDB", count it as "SQL/NoSQL" and "Databases". Do not mark them as missing if the category is mentioned via specific technologies.
+Evaluation Rules:
+1. CONTEXTUAL INTELLIGENCE: If you see "PostgreSQL" or "MongoDB", count it as "SQL/NoSQL" and "Databases". Do not mark them as missing if the category is mentioned via specific technologies.
 2. PARSING TOLERANCE: Ignore minor spacing issues (e.g., "S K I L L S" vs "SKILLS") that look like PDF extraction artifacts. Do not penalize the score for these.
 3. LOGICAL REASONING: Verify achievements. If the user mentions "Jest" or "Appium", they have testing experience.
 
@@ -42,7 +42,9 @@ Contextual Keywords: Identify the core competencies and industry-specific termin
 Completeness: Verify the presence of essential sections: Professional Summary, Work Experience, Education, and Skills/Tools.
 
 Pareto Improvement Strategy (80/20 Rule):
-Identify the top 3 actionable improvements that will yield the most significant increase in the overall ATS score. Focus on high-impact changes that require minimal effort from the user but solve major parsing or ranking issues.
+Identify the top 3 actionable improvements that will yield the most significant increase in the overall ATS score.
+Focus on high-impact changes that require minimal effort from the user but solve major parsing or ranking issues.
+the sum of the tips gain and the resume score should not be over 100.
 
 Resume Text to Analyze:
 [RESUME_TEXT]
@@ -62,7 +64,7 @@ JSON
             { 
                 "title": "string (2-5 words)",
                 "tip": "string (10-40 words)", 
-                "gain": "integer (0-100), represents the estimated increase in score" 
+                "gain": "integer, represents the estimated increase in score" 
             }
         ]
 }`
@@ -98,7 +100,9 @@ Evaluation Criteria (The "6-Second Skim" Test):
 - Identify if the text structure suggests a complex layout (like multiple columns) that might confuse standard ATS systems.
 
 Pareto Improvement Strategy (80/20 Rule):
-Identify the top 3 actionable improvements that will yield the most significant increase in the overall ATS score. Focus on high-impact changes that require minimal effort from the user but solve major parsing or ranking issues.
+Identify the top 3 actionable improvements that will yield the most significant increase in the overall ATS score.
+Focus on high-impact changes that require minimal effort from the user but solve major parsing or ranking issues.
+the sum of the tips gain and the resume score should not be over 100.
 
 
 Output Format (Strict JSON):
@@ -114,7 +118,7 @@ Output Format (Strict JSON):
             { 
                 "title": "string (2-5 words)",
                 "tip": "string (10-40 words)", 
-                "gain": "integer (0-100), represents the estimated increase in score" 
+                "gain": "integer, represents the estimated increase in score" 
             }
         ]
 }
@@ -136,7 +140,9 @@ Analysis Guidelines:
 4. MODERNITY: Is the candidate using current industry-standard tools and modern approaches?
 
 Pareto Improvement Strategy (80/20 Rule):
-Identify 3 actionable improvements that will yield the most significant score increase. Focus on "Low Effort, High Impact" changes—specifically keywords or phrasing that bridge the gap between the current text and high-ranking industry profiles.
+Identify 3 actionable improvements that will yield the most significant score increase.
+Focus on "Low Effort, High Impact" changes—specifically keywords or phrasing that bridge the gap between the current text and high-ranking industry profiles.
+the sum of the tips gain and the resume score should not be over 100.
 
 Output Format (Strict JSON):
 {
@@ -150,7 +156,7 @@ Output Format (Strict JSON):
             { 
                 "title": "string (2-5 words)",
                 "tip": "string (10-40 words)", 
-                "gain": "integer (0-100), represents the estimated increase in score" 
+                "gain": "integer, represents the estimated increase in score" 
             }
         ]
 }
@@ -176,7 +182,9 @@ Evaluation Criteria:
 4. SENIORITY SIGNALS: Does the language reflect leadership and initiative? (e.g., "Spearheaded", "Transformed", "Optimized", "Led").
 
 Pareto Improvement Strategy (80/20 Rule):
-Identify exactly 3 bullet points that are "task-oriented" and rewrite them to be "result-oriented". Focus on the 20% of the text that conveys 80% of the candidate's professional value.
+Identify 3 actionable improvements that will yield the most significant score increase.
+Focus on "Low Effort, High Impact" changes—specifically keywords or phrasing that bridge the gap between the current text and high-ranking industry profiles.
+the sum of the tips gain and the resume score should not be over 100.
 
 Output Format (Strict JSON):
 {
@@ -189,7 +197,7 @@ Output Format (Strict JSON):
             { 
                 "title": "string (2-5 words)",
                 "tip": "string (10-40 words)", 
-                "gain": "integer (0-100), represents the estimated increase in score" 
+                "gain": "integer, represents the estimated increase in score" 
             }
         ],
 }

@@ -1,5 +1,5 @@
 import { ANALYSIS_METRICS, METRICS_WEIGHTS } from "src/common/helpers/consts";
-import { CVFullAnalysis, CVMetricAnalysis } from "../types/cv";
+import { CVFullAnalysis, CVMetricAnalysis, CVTip } from "../types/cv";
 
 export const createOrderedPageRender = () => {
     return async (pageData: any): Promise<string> => {
@@ -51,4 +51,14 @@ export const calculateOverallScore = (analysis: Record<string, CVMetricAnalysis>
         overallScore += analysis[ANALYSIS_METRICS[metric]].overallScore * METRICS_WEIGHTS[ANALYSIS_METRICS[metric]];
     }
     return Math.floor(overallScore);
+}
+
+export const filterTips = (tips: CVTip[]): CVTip[] => {
+    return tips
+        .sort((a, b) => {
+            const weightA = METRICS_WEIGHTS[a.category] || 0;
+            const weightB = METRICS_WEIGHTS[b.category] || 0;
+            return (b.gain * weightB) - (a.gain * weightA);
+        })
+        .slice(0, 3);
 }

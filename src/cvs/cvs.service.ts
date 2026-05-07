@@ -5,13 +5,13 @@ import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { eq } from "drizzle-orm";
 
 import { askAi } from "src/common/helpers/ai";
-import { CV_CHECK_PATTERNS, FILE_TYPES_MAP } from "src/common/helpers/consts";
+import { ANALYSIS_METRICS, CV_CHECK_PATTERNS, FILE_TYPES_MAP } from "src/common/helpers/consts";
 import { cleanText, getFileType } from "src/common/helpers/utils";
-import { calculateOverallScore, createOrderedPageRender } from "./utils/utils";
+import { calculateOverallScore, createOrderedPageRender, filterTips } from "./utils/utils";
 import * as prompts from "src/common/helpers/prompts";
 import { DRIZZLE } from "src/drizzle/drizzle.module";
 import * as schema from '../db/schema/index';
-import { CVFullAnalysis, CVMetricAnalysis, CVDeterministicAnalysis, RoleTag, CVSmartAnalysis } from "./types/cv";
+import { CVFullAnalysis, CVMetricAnalysis, CVDeterministicAnalysis, RoleTag, CVSmartAnalysis, CVTip } from "./types/cv";
 
 
 interface ExtendedLoadParameters extends LoadParameters {
@@ -132,6 +132,9 @@ export class CVService {
                 throw new Error("Could not extract Smart ATS analysis");
             }
             console.log("Smart ATS analysis: ", analysis);
+            analysis.tips.map((tip: CVTip) => {
+                tip.category = ANALYSIS_METRICS.ATS;
+            })
             return analysis;
         } catch (error) {
             console.log("error getting ATS Smart analysis: ", error);
@@ -218,6 +221,9 @@ export class CVService {
                 throw new Error("error getting full layout score")
             }
             console.log("SmartLayout score: ", score);
+            score.tips.map((tip: CVTip) => {
+                tip.category = ANALYSIS_METRICS.LAYOUT;
+            })
             return score
         } catch (err) {
             console.log("error getting full layout score")
@@ -256,6 +262,9 @@ export class CVService {
                 throw new Error("error getting smart keywords score")
             }
             console.log("Smart keywords score: ", score);
+            score.tips.map((tip: CVTip) => {
+                tip.category = ANALYSIS_METRICS.KEYWORDS;
+            })
             return score;
         } catch (err) {
             console.log("error getting smart keywords score")
@@ -332,6 +341,9 @@ export class CVService {
                 throw new Error("error getting smart impact score")
             }
             console.log("SmartImpact score: ", score);
+            score.tips.map((tip: CVTip) => {
+                tip.category = ANALYSIS_METRICS.IMPACT;
+            })
             return score
         } catch (err) {
             console.log("error getting smart impact score")
@@ -363,8 +375,11 @@ export class CVService {
         ]);
 
         const score = calculateOverallScore({ ats, layout, keywords, impact });
+        const tips = [...ats.tips, ...layout.tips, ...keywords.tips, ...impact.tips];
+        const finalTips = filterTips(tips);
         console.log("Final score: ", score);
-        return { score, ats, layout, keywords, impact, tips: ats.tips };
+        console.log("Final tips: ", finalTips);
+        return { score, ats, layout, keywords, impact, tips: finalTips };
     }
 
     async uploadCv(file: Express.Multer.File, userId: string) {
@@ -382,6 +397,7 @@ export class CVService {
                 layoutScore: cvAnalysis.layout.overallScore,
                 overallScore: cvAnalysis.score,
                 roleTag: roleTag,
+                tips: cvAnalysis.tips
             })
         } catch (err) {
             console.log("error uploading cv", err)

@@ -24,7 +24,7 @@ export const ANALYSIS_METRICS = {
     LAYOUT: 'layout',
     KEYWORDS: 'keywords',
     IMPACT: 'impact'
-}
+} as const;
 
 export const METRICS_WEIGHTS = {
     [ANALYSIS_METRICS.ATS]: 0.2,
