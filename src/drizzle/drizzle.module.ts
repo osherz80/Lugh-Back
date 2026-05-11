@@ -1,7 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import * as schema from '../db/schema';
+import * as schema from '../db/schema/index';
 import { ConfigService } from '@nestjs/config';
 
 export const DRIZZLE = 'DRIZZLE';
@@ -12,7 +12,12 @@ export const DRIZZLE = 'DRIZZLE';
     {
       provide: DRIZZLE,
       useFactory: (configService: ConfigService) => {
-        const databaseUrl = configService.get<string>('DATABASE_URL');
+        const user = configService.get<string>('DB_USER');
+        const password = encodeURIComponent(configService.get<string>('DB_PASSWORD') || '');
+        const host = configService.get<string>('DB_POOLER_HOST');
+        const port = configService.get<string>('DB_POOLER_PORT');
+        const dbName = configService.get<string>('DB_NAME');
+        const databaseUrl = `postgresql://${user}:${password}@${host}:${port}/${dbName}`;
         if (!databaseUrl) {
           throw new Error('DATABASE_URL is not defined');
         }
@@ -24,4 +29,4 @@ export const DRIZZLE = 'DRIZZLE';
   ],
   exports: [DRIZZLE],
 })
-export class DrizzleModule {}
+export class DrizzleModule { }
