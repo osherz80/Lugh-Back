@@ -1,0 +1,55 @@
+name: Deploy Backend to Oracle Cloud
+
+on:
+  push:
+    branches:
+      - add-deploy-ci-cd
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.BACKEND_REMOTE_HOST }}
+          username: ubuntu
+          key: ${{ secrets.BACKEND_SSH_KEY }}
+          script: |
+            set -e
+            TARGET_DIR="~/Lugh-Server"
+
+            # עדכון קוד
+            if [ ! -d "$TARGET_DIR" ]; then
+              git clone https://github.com/${{ github.repository }}.git $TARGET_DIR
+            fi
+            cd $TARGET_DIR
+            git fetch origin dev
+            git reset --hard origin/dev
+
+            # בנייה
+            docker build -t lugh-server-image .
+
+            # עצירה והרצה מחדש עם כל המשתנים
+            docker stop lugh-server-container || true
+            docker rm lugh-server-container || true
+
+            docker run -d \
+              --name lugh-server-container \
+              -p 5050:5050 \
+              -e PORT=5050 \
+              -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+              -e JWT_REFRESH_SECRET="${{ secrets.JWT_REFRESH_SECRET }}" \
+              -e GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" \
+              -e GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              -e DB_POOLER_HOST="${{ secrets.DB_POOLER_HOST }}" \
+              -e DB_POOLER_PORT="${{ secrets.DB_POOLER_PORT }}" \
+              -e DB_HOST="${{ secrets.DB_HOST }}" \
+              -e DB_PORT="${{ secrets.DB_PORT }}" \
+              -e DB_USER="${{ secrets.DB_USER }}" \
+              -e DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+              -e DB_NAME="${{ secrets.DB_NAME }}" \
+              --restart always \
+              lugh-server-image
