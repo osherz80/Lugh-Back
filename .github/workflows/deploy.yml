@@ -10,6 +10,19 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # שלב חדש: העתקת קובץ הקונפיגורציה של Nginx מהפרויקט לשרת ה-Backend
+      - name: Copy Nginx Config to Server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.REMOTE_HOST }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "nginx/api.lugh.site.conf"
+          target: "~/"
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -18,9 +31,34 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
+
+            # --- התקנת Nginx אם הוא לא קיים ---
+            if ! command -v nginx > /dev/null; then
+              echo "Nginx not found, installing..."
+              sudo apt update
+              sudo apt install nginx -y
+            fi
+
+            # --- פתיחת Firewall פנימי (IPtables) ---
+            sudo iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT
+            sudo iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT
+            sudo netfilter-persistent save || true
+
+            # --- הגדרת Nginx ל-API ---
+            echo "Configuring Nginx..."
+            # וודא שהתיקייה קיימת והעתק את הקובץ
+            sudo mkdir -p /etc/nginx/sites-available/
+            sudo cp ~/nginx/api.lugh.site.conf /etc/nginx/sites-available/api.lugh.site
+            # יצירת Symlink והסרת ברירת המחדל
+            sudo ln -sf /etc/nginx/sites-available/api.lugh.site /etc/nginx/sites-enabled/
+            sudo rm -f /etc/nginx/sites-enabled/default
+            # בדיקת תקינות וריסטארט
+            sudo nginx -t
+            sudo systemctl restart nginx
+
+            # --- טיפול ב-Docker ---
             TARGET_DIR="~/Lugh-Back"
 
-            # עדכון קוד
             if [ ! -d "$TARGET_DIR" ]; then
               git clone https://github.com/${{ github.repository }}.git $TARGET_DIR
             fi
@@ -28,10 +66,10 @@ jobs:
             git fetch origin add-deploy-ci-cd
             git reset --hard origin/add-deploy-ci-cd
 
-            # בנייה
+            echo "Building Docker image..."
             docker build -t lugh-server-image .
 
-            # עצירה והרצה מחדש עם כל המשתנים
+            echo "Restarting container..."
             docker stop lugh-server-container || true
             docker rm lugh-server-container || true
 
