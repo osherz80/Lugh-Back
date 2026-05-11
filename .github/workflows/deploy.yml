@@ -39,6 +39,7 @@ jobs:
               --name lugh-server-container \
               -p 5050:5050 \
               -e PORT=5050 \
+              -e FRONTEND_URL="${{ secrets.FRONTEND_URL }}" \
               -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
               -e JWT_REFRESH_SECRET="${{ secrets.JWT_REFRESH_SECRET }}" \
               -e GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" \
