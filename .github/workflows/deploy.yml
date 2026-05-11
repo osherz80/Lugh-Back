@@ -13,20 +13,20 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.BACKEND_REMOTE_HOST }}
+          host: ${{ secrets.REMOTE_HOST }}
           username: ubuntu
-          key: ${{ secrets.BACKEND_SSH_KEY }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
-            TARGET_DIR="~/Lugh-Server"
+            TARGET_DIR="~/Lugh-Back"
 
             # עדכון קוד
             if [ ! -d "$TARGET_DIR" ]; then
               git clone https://github.com/${{ github.repository }}.git $TARGET_DIR
             fi
             cd $TARGET_DIR
-            git fetch origin dev
-            git reset --hard origin/dev
+            git fetch origin add-deploy-ci-cd
+            git reset --hard origin/add-deploy-ci-cd
 
             # בנייה
             docker build -t lugh-server-image .
