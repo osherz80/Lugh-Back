@@ -1,13 +1,13 @@
 import { relations } from 'drizzle-orm';
 import { pgTable, uuid, text, vector, index, timestamp, boolean, integer, jsonb } from 'drizzle-orm/pg-core';
-import { candidates } from '../schema';
 import { CVTip } from 'src/cvs/types/cv';
+import { smartProfiles } from './index';
 
 export const cvs = pgTable('cvs', {
     id: uuid('id').defaultRandom().primaryKey(),
-    candidateId: uuid('candidate_id')
+    smartProfileId: uuid('smart_profile_id')
         .notNull()
-        .references(() => candidates.userId, { onDelete: 'cascade' }),
+        .references(() => smartProfiles.id, { onDelete: 'cascade' }),
 
     // File Management
     fileName: text('file_name').notNull(),
@@ -33,14 +33,14 @@ export const cvs = pgTable('cvs', {
 }, (table) => {
     return {
         cvEmbeddingIdx: index('cv_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops')),
-        candidateIdx: index('candidate_idx').on(table.candidateId),
+        smartProfileIdx: index('smart_profile_idx').on(table.smartProfileId),
     };
 });
 
 
 export const cvsRelations = relations(cvs, ({ one }) => ({
-    candidate: one(candidates, {
-        fields: [cvs.candidateId],
-        references: [candidates.userId],
+    profile: one(smartProfiles, {
+        fields: [cvs.smartProfileId],
+        references: [smartProfiles.id],
     }),
 }));

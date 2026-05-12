@@ -1,10 +1,13 @@
 import { pgTable, uuid, varchar, integer, jsonb, text, timestamp, boolean } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { education, jobExperiences } from './index';
+import { cvs, education, jobExperiences, users } from './index';
 
 export const smartProfiles = pgTable('smart_profiles', {
     id: uuid('id').primaryKey().defaultRandom(),
-    candidateId: uuid('candidate_id').notNull().unique(),
+    candidateId: uuid('candidate_id')
+        .notNull()
+        .unique()
+        .references(() => users.id, { onDelete: 'cascade' }),
 
     // Basics
     fullName: varchar('full_name', { length: 50 }),
@@ -38,7 +41,12 @@ export const smartProfiles = pgTable('smart_profiles', {
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-export const smartProfilesRelations = relations(smartProfiles, ({ many }) => ({
+export const smartProfilesRelations = relations(smartProfiles, ({ one, many }) => ({
+    user: one(users, {
+        fields: [smartProfiles.candidateId],
+        references: [users.id],
+    }),
     experiences: many(jobExperiences),
     education: many(education),
+    cvs: many(cvs)
 }));
