@@ -7,14 +7,14 @@ import { BadRequestException, Injectable, Inject } from '@nestjs/common';
 import { UserDto } from 'src/dtos/user.dto';
 import { DRIZZLE } from 'src/drizzle/drizzle.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { users, candidates } from '../db/schema';
+import { users, smartProfiles } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { InferSelectModel } from 'drizzle-orm';
 import * as schema from '../db/schema/index';
 import { FullUser } from 'src/common/types/general';
 
 type User = InferSelectModel<typeof users>;
-type Candidate = InferSelectModel<typeof candidates>;
+type SmartProfile = InferSelectModel<typeof smartProfiles>;
 
 @Injectable()
 export class AuthService {
@@ -109,9 +109,11 @@ export class AuthService {
             return await this.db.query.users.findFirst({
                 where: eq(users.email, email),
                 with: {
-                    candidate: {
+                    smartProfiles: {
                         with: {
-                            cvs: true
+                            cvs: true,
+                            education: true,
+                            experiences: true,
                         }
                     }
                 }
@@ -121,19 +123,6 @@ export class AuthService {
             throw new BadRequestException(err.message);
         }
     }
-
-    async setCandidate(user: User): Promise<Candidate> {
-        try {
-            const [candidate] = await this.db.insert(candidates).values({
-                userId: user.id,
-                name: user.username
-            }).returning();
-            return candidate;
-        } catch (err: any) {
-            console.error('Error setting candidate:', err);
-            throw new BadRequestException(err.message);
-        }
-    };
 
     async googleLogin(req: Request, res: Response) {
         const { token } = req.body;
@@ -155,8 +144,6 @@ export class AuthService {
                     password: 'google-sso'
                 }).returning();
 
-                const candidate = await this.setCandidate(newUser);
-                newUser['candidate'] = candidate;
                 user = newUser;
             }
 
@@ -185,9 +172,6 @@ export class AuthService {
                 email,
                 password: hashedPassword,
             }).returning();
-
-            const candidate = await this.setCandidate(user);
-            user['candidate'] = candidate;
 
             const { accessToken, refreshToken } = await this.setTokens(user);
 
