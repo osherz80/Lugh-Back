@@ -7,7 +7,7 @@ export const cvs = pgTable('cvs', {
     id: uuid('id').defaultRandom().primaryKey(),
     smartProfileId: uuid('smart_profile_id')
         .notNull()
-        .references(() => smartProfiles.id, { onDelete: 'cascade' }),
+        .references(() => smartProfiles.profileId, { onDelete: 'cascade' }),
 
     // File Management
     fileName: text('file_name').notNull(),
@@ -41,6 +41,6 @@ export const cvs = pgTable('cvs', {
 export const cvsRelations = relations(cvs, ({ one }) => ({
     profile: one(smartProfiles, {
         fields: [cvs.smartProfileId],
-        references: [smartProfiles.id],
+        references: [smartProfiles.profileId],
     }),
 }));

@@ -3,7 +3,7 @@ import { relations } from 'drizzle-orm';
 import { cvs, education, jobExperiences, users } from './index';
 
 export const smartProfiles = pgTable('smart_profiles', {
-    id: uuid('id').primaryKey().defaultRandom(),
+    profileId: uuid('profile_id').primaryKey().defaultRandom(),
     candidateId: uuid('candidate_id')
         .notNull()
         .unique()
@@ -36,6 +36,7 @@ export const smartProfiles = pgTable('smart_profiles', {
     // Extra
     anythingElse: text('anything_else'),
     currentStep: integer('current_step').default(1),
+    isMaster: boolean('is_master').default(false),
 
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
