@@ -166,12 +166,13 @@ export class SmartProfileService {
         }
 
         try {
-            return await this.db.update(schema.smartProfiles)
+            const results = await this.db.update(schema.smartProfiles)
                 .set(body)
                 .where(and(
                     eq(schema.smartProfiles.profileId, body.profileId!),
                     eq(schema.smartProfiles.candidateId, userId)
-                )).returning()[0];
+                )).returning().execute();
+            return results[0];
         } catch (err: any) {
             console.error('Error upserting smart profile:', err);
             throw new BadRequestException(err.message);
@@ -200,30 +201,43 @@ export class SmartProfileService {
         return isUserProfile ? true : false;
     }
 
-    async handleUpsert(body: Partial<FullSmartProfile>, section: SmartProfileSection, userId: string) {
-        const sectionHandleMap = {
-            [PROFILE_SECTIONS.EXPERIENCE]: this.upsertJobExperience,
-            [PROFILE_SECTIONS.EDUCATION]: this.upsertEducation,
-        }
-
-        const handle = sectionHandleMap[section]
-            ? sectionHandleMap[section]
-            : this.upsertSmartProfile;
-
+    async handleUpsert(body: Partial<FullSmartProfile & { smartProfileId?: string }>, section: SmartProfileSection, userId: string) {
         try {
-            !body.isMaster && (body.isMaster = await this.isFirstProfile(userId));
+            // Handle frontend field naming variations
+            if (body.smartProfileId && !body.profileId) {
+                body.profileId = body.smartProfileId;
+            }
+
+            // If no profileId is provided, we create a new profile
             if (!body.profileId) {
                 body.candidateId = userId;
-                console.error("Missing ID in upsert smart profile, creating new profile");
+                // Automatically set as master if it's the user's first profile
+                body.isMaster = await this.isFirstProfile(userId);
+                console.log("No profileId provided, creating new profile for user:", userId);
                 return await this.createSmartProfile(body);
             }
+
+            // Ensure isMaster is set for the first profile
+            if (body.isMaster === undefined) {
+                body.isMaster = await this.isFirstProfile(userId);
+            }
+
             const isBelong = await this.checkProfileBelongToUser(body.profileId!, userId);
             if (!isBelong) {
                 throw new BadRequestException("Profile does not belong to user");
             }
-            return await handle(body, userId);
+
+            // Route to correct handler based on section
+            if (section === PROFILE_SECTIONS.EXPERIENCE) {
+                return await this.upsertJobExperience(body, userId);
+            } else if (section === PROFILE_SECTIONS.EDUCATION) {
+                return await this.upsertEducation(body, userId);
+            } else {
+                return await this.upsertSmartProfile(body, userId);
+            }
+
         } catch (err: any) {
-            console.error('Error upserting job experience:', err);
+            console.error(`Error in handleUpsert for section ${section}:`, err);
             throw new BadRequestException(err.message);
         }
     }

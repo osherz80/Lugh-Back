@@ -6,7 +6,6 @@ export const smartProfiles = pgTable('smart_profiles', {
     profileId: uuid('profile_id').primaryKey().defaultRandom(),
     candidateId: uuid('candidate_id')
         .notNull()
-        .unique()
         .references(() => users.id, { onDelete: 'cascade' }),
 
     // Basics
