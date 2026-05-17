@@ -5,7 +5,7 @@ import { smartProfiles } from './index';
 
 export const cvs = pgTable('cvs', {
     id: uuid('id').defaultRandom().primaryKey(),
-    smartProfileId: uuid('smart_profile_id')
+    profileId: uuid('profile_id')
         .notNull()
         .references(() => smartProfiles.profileId, { onDelete: 'cascade' }),
 
@@ -33,14 +33,14 @@ export const cvs = pgTable('cvs', {
 }, (table) => {
     return {
         cvEmbeddingIdx: index('cv_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops')),
-        smartProfileIdx: index('smart_profile_idx').on(table.smartProfileId),
+        profileIdx: index('profile_idx').on(table.profileId),
     };
 });
 
 
 export const cvsRelations = relations(cvs, ({ one }) => ({
     profile: one(smartProfiles, {
-        fields: [cvs.smartProfileId],
+        fields: [cvs.profileId],
         references: [smartProfiles.profileId],
     }),
 }));
