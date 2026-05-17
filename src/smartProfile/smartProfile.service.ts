@@ -134,8 +134,13 @@ export class SmartProfileService {
                 throw new BadRequestException("no education data");
             }
 
+            const dataToInsert = stepData.map(job => ({
+                ...job,
+                profileId: profileId
+            }));
+
             return await this.db.insert(schema.education)
-                .values(stepData)
+                .values(dataToInsert)
                 .onConflictDoUpdate({
                     target: [schema.education.id, schema.education.profileId],
                     set: {
@@ -163,8 +168,13 @@ export class SmartProfileService {
                 throw new BadRequestException("no job experience data");
             }
 
+            const dataToInsert = stepData.map(job => ({
+                ...job,
+                profileId: profileId
+            }));
+
             return await this.db.insert(schema.jobExperiences)
-                .values(stepData)
+                .values(dataToInsert)
                 .onConflictDoUpdate({
                     target: [schema.jobExperiences.id, schema.jobExperiences.profileId],
                     set: {
@@ -185,7 +195,7 @@ export class SmartProfileService {
         }
     }
 
-    async upsertSmartProfile(body: Partial<FullSmartProfile>, userId: string): Promise<SmartProfile> {
+    async upsertSmartProfile(body: Partial<Omit<FullSmartProfile, 'profileId'>>, userId: string, profileId: string): Promise<SmartProfile> {
         if (!userId) {
             console.error("user id is missing in upsert smart profile");
             throw new BadRequestException("user id is missing in upsert");
@@ -195,7 +205,7 @@ export class SmartProfileService {
             const results = await this.db.update(schema.smartProfiles)
                 .set(body)
                 .where(and(
-                    eq(schema.smartProfiles.profileId, body.profileId!),
+                    eq(schema.smartProfiles.profileId, profileId),
                     eq(schema.smartProfiles.candidateId, userId)
                 )).returning().execute();
             return results[0];
@@ -239,11 +249,6 @@ export class SmartProfileService {
                 return await this.createSmartProfile(stepData, userId);
             }
 
-            // Ensure isMaster is set for the first profile
-            if (stepData.isMaster === undefined || stepData.isMaster === null) {
-                stepData.isMaster = await this.isFirstProfile(userId);
-            }
-
             const isBelong = await this.checkProfileBelongToUser(profileId, userId);
             if (!isBelong) {
                 throw new BadRequestException("Profile does not belong to user");
@@ -253,8 +258,12 @@ export class SmartProfileService {
                 data = await this.upsertJobExperience(stepData as JobExperience[], profileId);
             } else if (section === PROFILE_SECTIONS.EDUCATION) {
                 data = await this.upsertEducation(stepData as Education[], profileId);
+            } else if (section === PROFILE_SECTIONS.SKILLS) {
+                data = await this.upsertSmartProfile({ skills: stepData as any }, userId, profileId);
+            } else if (section === PROFILE_SECTIONS.PERSONA) {
+                data = await this.upsertSmartProfile({ persona: stepData as any }, userId, profileId);
             } else {
-                data = await this.upsertSmartProfile(stepData, userId);
+                data = await this.upsertSmartProfile(stepData, userId, profileId);
             }
 
             await this.incrementProfileStep(profileId);
