@@ -21,7 +21,7 @@ export class SmartProfileController {
         return await this.smartProfileService.getAllSmartProfilesByUser(userId);
     }
     @Patch()
-    async upsertSmartProfile(@UserId() userId: string, @Body() body: Partial<FullSmartProfile> & { section: SmartProfileSection }) {
-        return await this.smartProfileService.handleUpsert(body, body.section, userId);
+    async upsertSmartProfile(@UserId() userId: string, @Body() { stepData, section }: { stepData: Partial<FullSmartProfile>, section: SmartProfileSection }) {
+        return await this.smartProfileService.handleUpsert(stepData, section, userId);
     }
 }

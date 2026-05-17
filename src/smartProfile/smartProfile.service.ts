@@ -4,7 +4,7 @@ import { DRIZZLE } from 'src/drizzle/drizzle.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../db/schema/index';
 import { eq } from 'drizzle-orm';
-import { FullSmartProfile, SmartProfileSection } from 'src/common/types/general';
+import { FullSmartProfile, OtherSmartProfile, SmartProfileRes, SmartProfileSection } from 'src/common/types/general';
 import { PROFILE_SECTIONS } from 'src/common/helpers/consts';
 
 type SmartProfile = InferSelectModel<typeof schema.smartProfiles>;
@@ -39,13 +39,36 @@ export class SmartProfileService {
         }
     }
 
-    async getMasterSmartProfile(userId: string): Promise<SmartProfile | undefined> {
+    async getOtherSmartProfiles(userId: string): Promise<OtherSmartProfile[]> {
+        if (!userId) {
+            console.error("Missing candidate ID in get minimal profiles");
+            throw new BadRequestException("Missing candidate ID");
+        }
+        try {
+            const otherProfiles = await this.db.select({
+                profileId: schema.smartProfiles.profileId,
+                targetRole: schema.smartProfiles.targetRole
+            })
+                .from(schema.smartProfiles)
+                .where(and(
+                    eq(schema.smartProfiles.candidateId, userId),
+                    eq(schema.smartProfiles.isMaster, false)
+                ));
+            return otherProfiles;
+        } catch (err: any) {
+            console.error('Error fetching minimal profiles:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async getMasterSmartProfile(userId: string): Promise<SmartProfileRes | undefined> {
         if (!userId) {
             console.error("Missing candidate ID in get master profile");
             throw new BadRequestException("Missing candidate ID");
         }
         try {
-            return await this.db.query.smartProfiles.findFirst({
+            const otherProfiles = await this.getOtherSmartProfiles(userId);
+            const masterProfile = await this.db.query.smartProfiles.findFirst({
                 where: and(
                     eq(schema.smartProfiles.candidateId, userId),
                     eq(schema.smartProfiles.isMaster, true)
@@ -56,6 +79,11 @@ export class SmartProfileService {
                     experiences: true,
                 }
             });
+            if (!masterProfile) {
+                console.log("No master profile found");
+                return undefined;
+            }
+            return { ...masterProfile, otherProfiles };
         } catch (err: any) {
             console.error('Error fetching smart profile by user:', err);
             throw new BadRequestException(err.message);
@@ -85,13 +113,13 @@ export class SmartProfileService {
         }
     }
 
-    async createSmartProfile(body: Partial<SmartProfile>): Promise<SmartProfile> {
-        if (!body.candidateId) {
+    async createSmartProfile(body: Partial<SmartProfile>, userId: string): Promise<SmartProfile> {
+        if (!userId) {
             console.error("Missing candidate ID in create smart profile");
             throw new BadRequestException("Missing candidate ID");
         }
         try {
-            const newProfile = await this.db.insert(schema.smartProfiles).values(body as any).returning().execute();
+            const newProfile = await this.db.insert(schema.smartProfiles).values({ ...body, candidateId: userId }).returning().execute();
             return newProfile[0];
         } catch (err: any) {
             console.error('Error creating smart profile:', err);
@@ -99,20 +127,19 @@ export class SmartProfileService {
         }
     }
 
-    async upsertEducation(body: Partial<FullSmartProfile>, userId: string) {
+    async upsertEducation(stepData: Education[], profileId: string) {
         try {
-            const educationData = body.education;
-
-            if (!educationData || !Array.isArray(educationData) || educationData.length === 0) {
+            if (!stepData || !Array.isArray(stepData) || stepData.length === 0) {
                 console.log("no education data");
                 throw new BadRequestException("no education data");
             }
 
             return await this.db.insert(schema.education)
-                .values(educationData)
+                .values(stepData)
                 .onConflictDoUpdate({
                     target: [schema.education.id, schema.education.profileId],
                     set: {
+                        profileId: profileId,
                         institution: sql`excluded.institution`,
                         degree: sql`excluded.degree`,
                         description: sql`excluded.description`,
@@ -129,20 +156,19 @@ export class SmartProfileService {
         }
     }
 
-    async upsertJobExperience(body: Partial<FullSmartProfile>, userId: string) {
+    async upsertJobExperience(stepData: JobExperience[], profileId: string) {
         try {
-            const jobExperienceData = body.experiences;
-
-            if (!jobExperienceData || !Array.isArray(jobExperienceData) || jobExperienceData.length === 0) {
+            if (!stepData || !Array.isArray(stepData) || stepData.length === 0) {
                 console.log("no job experience data");
                 throw new BadRequestException("no job experience data");
             }
 
             return await this.db.insert(schema.jobExperiences)
-                .values(jobExperienceData)
+                .values(stepData)
                 .onConflictDoUpdate({
                     target: [schema.jobExperiences.id, schema.jobExperiences.profileId],
                     set: {
+                        profileId: profileId,
                         company: sql`excluded.company`,
                         roleTag: sql`excluded.role_tag`,
                         startDate: sql`excluded.start_date`,
@@ -201,43 +227,56 @@ export class SmartProfileService {
         return isUserProfile ? true : false;
     }
 
-    async handleUpsert(body: Partial<FullSmartProfile & { smartProfileId?: string }>, section: SmartProfileSection, userId: string) {
-        try {
-            // Handle frontend field naming variations
-            if (body.smartProfileId && !body.profileId) {
-                body.profileId = body.smartProfileId;
-            }
+    async handleUpsert(stepData: Partial<Omit<FullSmartProfile, 'profileId'>>, section: SmartProfileSection, userId: string, profileId?: string) {
+        let data: any;
 
+        try {
             // If no profileId is provided, we create a new profile
-            if (!body.profileId) {
-                body.candidateId = userId;
+            if (!profileId) {
                 // Automatically set as master if it's the user's first profile
-                body.isMaster = await this.isFirstProfile(userId);
+                stepData.isMaster = await this.isFirstProfile(userId);
                 console.log("No profileId provided, creating new profile for user:", userId);
-                return await this.createSmartProfile(body);
+                return await this.createSmartProfile(stepData, userId);
             }
 
             // Ensure isMaster is set for the first profile
-            if (body.isMaster === undefined) {
-                body.isMaster = await this.isFirstProfile(userId);
+            if (stepData.isMaster === undefined || stepData.isMaster === null) {
+                stepData.isMaster = await this.isFirstProfile(userId);
             }
 
-            const isBelong = await this.checkProfileBelongToUser(body.profileId!, userId);
+            const isBelong = await this.checkProfileBelongToUser(profileId, userId);
             if (!isBelong) {
                 throw new BadRequestException("Profile does not belong to user");
             }
 
-            // Route to correct handler based on section
             if (section === PROFILE_SECTIONS.EXPERIENCE) {
-                return await this.upsertJobExperience(body, userId);
+                data = await this.upsertJobExperience(stepData as JobExperience[], profileId);
             } else if (section === PROFILE_SECTIONS.EDUCATION) {
-                return await this.upsertEducation(body, userId);
+                data = await this.upsertEducation(stepData as Education[], profileId);
             } else {
-                return await this.upsertSmartProfile(body, userId);
+                data = await this.upsertSmartProfile(stepData, userId);
             }
 
+            await this.incrementProfileStep(profileId);
+            return data;
         } catch (err: any) {
             console.error(`Error in handleUpsert for section ${section}:`, err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async incrementProfileStep(profileId: string) {
+        try {
+            const results = await this.db.update(schema.smartProfiles)
+                .set({
+                    currentStep: sql`${schema.smartProfiles.currentStep} + 1`
+                })
+                .where(eq(schema.smartProfiles.profileId, profileId))
+                .returning()
+                .execute();
+            return results[0];
+        } catch (err: any) {
+            console.error('Error incrementing profile step:', err);
             throw new BadRequestException(err.message);
         }
     }

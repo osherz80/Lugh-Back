@@ -12,11 +12,15 @@ export type FullUser = User & {
 export type AnalysisMetrics = typeof ANALYSIS_METRICS[keyof typeof ANALYSIS_METRICS];
 
 export type SmartProfile = InferSelectModel<typeof schema.smartProfiles>;
+export type OtherSmartProfile = {
+    profileId: string;
+    targetRole: string | null;
+};
 export type Education = InferSelectModel<typeof schema.education>;
 export type JobExperience = InferSelectModel<typeof schema.jobExperiences>;
 export type FullSmartProfile = SmartProfile & {
     education: Education[];
     experiences: JobExperience[];
 }
-
+export type SmartProfileRes = FullSmartProfile & { otherProfiles: OtherSmartProfile[] }
 export type SmartProfileSection = (typeof PROFILE_SECTIONS)[keyof typeof PROFILE_SECTIONS];
