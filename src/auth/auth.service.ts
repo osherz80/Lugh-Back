@@ -253,38 +253,43 @@ export class AuthService {
         }
     };
 
-    async refresh(req: Request, res: Response) {
-        const refreshToken = req.cookies?.refreshToken;
-
-        if (!refreshToken) {
-            throw new BadRequestException('Missing refresh token');
+    async refreshAccessToken(refreshToken: string, res: Response): Promise<string> {
+        const refreshTokenSecret = process.env.JWT_REFRESH_SECRET;
+        if (!refreshTokenSecret) {
+            throw new Error('FATAL: JWT_REFRESH_SECRET environment variable is not set');
         }
 
-        try {
-            const refreshTokenSecret = process.env.JWT_REFRESH_SECRET;
-            if (!refreshTokenSecret) {
-                throw new Error('FATAL: JWT_REFRESH_SECRET environment variable is not set');
-            }
-            const payload: any = jwt.verify(refreshToken, refreshTokenSecret);
-            const [user] = await this.db.select().from(users).where(eq(users.id, payload.userId));
+        const payload: any = jwt.verify(refreshToken, refreshTokenSecret);
+        const [user] = await this.db.select().from(users).where(eq(users.id, payload.userId));
 
-            if (!user || !user.refreshTokens || !user.refreshTokens.includes(refreshToken)) {
-                throw new BadRequestException('Invalid refresh token');
-            }
-
-            const { accessToken: newAccessToken, refreshToken: newRefreshToken } = this.generateTokens(user.id);
-
-            const filteredTokens = user.refreshTokens.filter(token => token !== refreshToken);
-            filteredTokens.push(newRefreshToken);
-
-            await this.db.update(users)
-                .set({ refreshTokens: filteredTokens })
-                .where(eq(users.id, user.id));
-
-            return this.sendAuthResponse(res, new UserDto(user), newAccessToken, newRefreshToken);
-        } catch (err: any) {
-            throw new BadRequestException('Invalid refresh token');
+        if (!user || !user.refreshTokens || !user.refreshTokens.includes(refreshToken)) {
+            throw new Error('Invalid refresh token');
         }
-    };
+
+        const { accessToken: newAccessToken, refreshToken: newRefreshToken } = this.generateTokens(user.id);
+
+        const filteredTokens = user.refreshTokens.filter(token => token !== refreshToken);
+        filteredTokens.push(newRefreshToken);
+
+        await this.db.update(users)
+            .set({ refreshTokens: filteredTokens })
+            .where(eq(users.id, user.id));
+
+        res.cookie('accessToken', newAccessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 15 * 60 * 1000, // 15m
+        });
+
+        res.cookie('refreshToken', newRefreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 7 * 24 * 60 * 60 * 1000, // 7d
+        });
+
+        return user.id;
+    }
 
 }

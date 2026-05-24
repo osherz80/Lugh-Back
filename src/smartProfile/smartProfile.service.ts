@@ -39,7 +39,7 @@ export class SmartProfileService {
         }
     }
 
-    async getOtherSmartProfiles(userId: string): Promise<OtherSmartProfile[]> {
+    async getFlatOtherSmartProfiles(userId: string): Promise<OtherSmartProfile[]> {
         if (!userId) {
             console.error("Missing candidate ID in get minimal profiles");
             throw new BadRequestException("Missing candidate ID");
@@ -61,13 +61,35 @@ export class SmartProfileService {
         }
     }
 
+    async getFullOtherSmartProfiles(userId: string): Promise<FullSmartProfile[]> {
+        if (!userId) {
+            console.error("Missing candidate ID in get other profiles");
+            throw new BadRequestException("Missing candidate ID");
+        }
+        try {
+            return await this.db.query.smartProfiles.findMany({
+                where: and(
+                    eq(schema.smartProfiles.candidateId, userId),
+                    eq(schema.smartProfiles.isMaster, false)
+                ),
+                with: {
+                    education: true,
+                    experiences: true,
+                }
+            });
+        } catch (err: any) {
+            console.error('Error fetching other smart profiles:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
     async getMasterSmartProfile(userId: string): Promise<SmartProfileRes | undefined> {
         if (!userId) {
             console.error("Missing candidate ID in get master profile");
             throw new BadRequestException("Missing candidate ID");
         }
         try {
-            const otherProfiles = await this.getOtherSmartProfiles(userId);
+            const otherProfiles = await this.getFlatOtherSmartProfiles(userId);
             const masterProfile = await this.db.query.smartProfiles.findFirst({
                 where: and(
                     eq(schema.smartProfiles.candidateId, userId),
@@ -90,28 +112,75 @@ export class SmartProfileService {
         }
     }
 
-    async getSmartProfileById(userId: string, profileId: string): Promise<SmartProfile | undefined> {
-        if (!profileId || !userId) {
-            console.error("Missing IDs in get smart profile by id");
-            throw new BadRequestException("Missing IDs");
+    async getProfileExperiences(profileId: string): Promise<JobExperience[]> {
+        if (!profileId) {
+            console.error("Missing profile id in get profile jobs");
+            throw new BadRequestException("Missing profile id");
+        }
+        try {
+            return await this.db.query.jobExperiences.findMany({
+                where: eq(schema.jobExperiences.profileId, profileId),
+            });
+        } catch (err: any) {
+            console.error('Error fetching profile jobs:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async getProfileEducation(profileId: string): Promise<Education[]> {
+        if (!profileId) {
+            console.error("Missing profile id in get profile education");
+            throw new BadRequestException("Missing profile id");
+        }
+        try {
+            return await this.db.query.education.findMany({
+                where: eq(schema.education.profileId, profileId),
+            });
+        } catch (err: any) {
+            console.error('Error fetching profile education:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async getFlatProfile(profileId: string): Promise<SmartProfile | undefined> {
+        if (!profileId) {
+            console.error("Missing profile id in get flat profile");
+            throw new BadRequestException("Missing profile id");
         }
         try {
             return await this.db.query.smartProfiles.findFirst({
-                where: and(
-                    eq(schema.smartProfiles.profileId, profileId),
-                    eq(schema.smartProfiles.candidateId, userId)
-                ),
-                with: {
-                    cvs: true,
-                    education: true,
-                    experiences: true,
-                }
-            });
+                where: eq(schema.smartProfiles.profileId, profileId),
+            }).execute();
         } catch (err: any) {
             console.error('Error fetching smart profile by id:', err);
             throw new BadRequestException(err.message);
         }
     }
+
+    async getFullProfile(profileId: string, userId: string): Promise<FullSmartProfile> {
+        try {
+            const isUserProfile = await this.checkProfileBelongToUser(profileId, userId);
+            if (!isUserProfile) {
+                console.error("Profile does not belong to user in get full profile");
+                throw new BadRequestException("Profile does not belong to user");
+            }
+
+            const [profile, education, experiences] = await Promise.all([
+                this.getFlatProfile(profileId),
+                this.getProfileEducation(profileId),
+                this.getProfileExperiences(profileId)
+            ]);
+            if (!profile) {
+                console.error("Profile not found in get full profile");
+                throw new BadRequestException("Profile not found");
+            }
+            return { ...profile, education, experiences };
+        } catch (err: any) {
+            console.error('Error fetching full profile:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
 
     async createSmartProfile(body: Partial<SmartProfile>, userId: string): Promise<SmartProfile> {
         if (!userId) {
@@ -139,7 +208,7 @@ export class SmartProfileService {
                 profileId: profileId
             }));
 
-            return await this.db.insert(schema.education)
+            const educationPromise = this.db.insert(schema.education)
                 .values(dataToInsert)
                 .onConflictDoUpdate({
                     target: [schema.education.id, schema.education.profileId],
@@ -154,6 +223,13 @@ export class SmartProfileService {
                     },
                 })
                 .returning();
+
+            const [education, fullProfile] = await Promise.all([educationPromise, this.getFlatProfile(profileId)])
+            const updatedProfile = {
+                ...fullProfile,
+                education
+            }
+            return updatedProfile
 
         } catch (err: any) {
             console.error('Error upserting education:', err);
@@ -173,7 +249,9 @@ export class SmartProfileService {
                 profileId: profileId
             }));
 
-            return await this.db.insert(schema.jobExperiences)
+
+
+            const jobsPromise = this.db.insert(schema.jobExperiences)
                 .values(dataToInsert)
                 .onConflictDoUpdate({
                     target: [schema.jobExperiences.id, schema.jobExperiences.profileId],
@@ -188,6 +266,13 @@ export class SmartProfileService {
                     },
                 })
                 .returning();
+
+            const [jobs, fullProfile] = await Promise.all([jobsPromise, this.getFlatProfile(profileId)])
+            const updatedProfile = {
+                ...fullProfile,
+                jobs
+            }
+            return updatedProfile
 
         } catch (err: any) {
             console.error('Error upserting job experience:', err);
@@ -267,7 +352,8 @@ export class SmartProfileService {
             }
 
             await this.incrementProfileStep(profileId);
-            return data;
+            const fullProfile = await this.getFullProfile(profileId, userId);
+            return fullProfile;
         } catch (err: any) {
             console.error(`Error in handleUpsert for section ${section}:`, err);
             throw new BadRequestException(err.message);

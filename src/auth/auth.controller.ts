@@ -31,11 +31,5 @@ export class AuthController {
         const result = await this.authService.logout(req, res);
         return result;
     }
-
-    @Post('/refresh')
-    async refresh(@Body() body: { email: string, password: string }, @Res() res: Response, @Req() req: Request) {
-        const result = await this.authService.refresh(req, res);
-        return result;
-    }
 }
 

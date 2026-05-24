@@ -12,9 +12,9 @@ export class SmartProfileController {
     async getMasterSmartProfile(@UserId() userId: string) {
         return await this.smartProfileService.getMasterSmartProfile(userId);
     }
-    @Get(':profileId')
-    async getSmartProfileById(@UserId() userId: string, @Param() params: { profileId: string }) {
-        return await this.smartProfileService.getSmartProfileById(userId, params.profileId);
+    @Get('/other')
+    async getOtherSmartProfiles(@UserId() userId: string) {
+        return await this.smartProfileService.getFullOtherSmartProfiles(userId);
     }
     @Get('/all')
     async getAllSmartProfilesByUser(@UserId() userId: string) {
