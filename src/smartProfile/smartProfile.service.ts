@@ -352,6 +352,7 @@ export class SmartProfileService {
             }
 
             await this.incrementProfileStep(profileId);
+            await this.setMaster(userId, profileId);
             const fullProfile = await this.getFullProfile(profileId, userId);
             return fullProfile;
         } catch (err: any) {
@@ -361,6 +362,7 @@ export class SmartProfileService {
     }
 
     async incrementProfileStep(profileId: string) {
+        return
         try {
             const results = await this.db.update(schema.smartProfiles)
                 .set({
@@ -372,6 +374,33 @@ export class SmartProfileService {
             return results[0];
         } catch (err: any) {
             console.error('Error incrementing profile step:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async setMaster(userId: string, profileId: string) {
+        try {
+            const isBelong = await this.checkProfileBelongToUser(profileId, userId);
+            if (!isBelong) {
+                throw new BadRequestException("Profile does not belong to user");
+            }
+
+            const results = await this.db.update(schema.smartProfiles)
+                .set({
+                    isMaster: false
+                })
+                .where(eq(schema.smartProfiles.isMaster, true))
+                .execute();
+
+            const results2 = await this.db.update(schema.smartProfiles)
+                .set({
+                    isMaster: true
+                })
+                .where(eq(schema.smartProfiles.profileId, profileId))
+                .execute();
+            return results2;
+        } catch (err: any) {
+            console.error('Error setting master:', err);
             throw new BadRequestException(err.message);
         }
     }
