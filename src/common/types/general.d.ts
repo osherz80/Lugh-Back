@@ -1,15 +1,26 @@
 import { InferSelectModel } from "drizzle-orm";
-import { users, candidates, cvs } from "../../db/schema";
-import { ANALYSIS_METRICS } from "../helpers/consts";
+import * as schema from "../../db/schema";
+import { ANALYSIS_METRICS, PROFILE_SECTIONS } from "../helpers/consts";
 
-type User = InferSelectModel<typeof users>;
-type Candidate = InferSelectModel<typeof candidates>;
-type CV = InferSelectModel<typeof cvs>;
+export type User = InferSelectModel<typeof schema.users>;
+export type CV = InferSelectModel<typeof schema.cvs>;
 
 export type FullUser = User & {
-    candidate?: (Candidate & {
-        cvs?: CV[];
-    }) | null;
+    smartProfiles?: SmartProfile[];
 };
 
 export type AnalysisMetrics = typeof ANALYSIS_METRICS[keyof typeof ANALYSIS_METRICS];
+
+export type SmartProfile = InferSelectModel<typeof schema.smartProfiles>;
+export type OtherSmartProfile = {
+    profileId: string;
+    targetRole: string | null;
+};
+export type Education = InferSelectModel<typeof schema.education>;
+export type JobExperience = InferSelectModel<typeof schema.jobExperiences>;
+export type FullSmartProfile = SmartProfile & {
+    education: Education[];
+    experiences: JobExperience[];
+}
+export type SmartProfileRes = FullSmartProfile & { otherProfiles: OtherSmartProfile[] }
+export type SmartProfileSection = (typeof PROFILE_SECTIONS)[keyof typeof PROFILE_SECTIONS];

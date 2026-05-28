@@ -7,14 +7,14 @@ import { BadRequestException, Injectable, Inject } from '@nestjs/common';
 import { UserDto } from 'src/dtos/user.dto';
 import { DRIZZLE } from 'src/drizzle/drizzle.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { users, candidates } from '../db/schema';
+import { users, smartProfiles } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { InferSelectModel } from 'drizzle-orm';
 import * as schema from '../db/schema/index';
 import { FullUser } from 'src/common/types/general';
 
 type User = InferSelectModel<typeof users>;
-type Candidate = InferSelectModel<typeof candidates>;
+type SmartProfile = InferSelectModel<typeof smartProfiles>;
 
 @Injectable()
 export class AuthService {
@@ -109,9 +109,11 @@ export class AuthService {
             return await this.db.query.users.findFirst({
                 where: eq(users.email, email),
                 with: {
-                    candidate: {
+                    smartProfiles: {
                         with: {
-                            cvs: true
+                            cvs: true,
+                            education: true,
+                            experiences: true,
                         }
                     }
                 }
@@ -121,19 +123,6 @@ export class AuthService {
             throw new BadRequestException(err.message);
         }
     }
-
-    async setCandidate(user: User): Promise<Candidate> {
-        try {
-            const [candidate] = await this.db.insert(candidates).values({
-                userId: user.id,
-                name: user.username
-            }).returning();
-            return candidate;
-        } catch (err: any) {
-            console.error('Error setting candidate:', err);
-            throw new BadRequestException(err.message);
-        }
-    };
 
     async googleLogin(req: Request, res: Response) {
         const { token } = req.body;
@@ -155,8 +144,6 @@ export class AuthService {
                     password: 'google-sso'
                 }).returning();
 
-                const candidate = await this.setCandidate(newUser);
-                newUser['candidate'] = candidate;
                 user = newUser;
             }
 
@@ -185,9 +172,6 @@ export class AuthService {
                 email,
                 password: hashedPassword,
             }).returning();
-
-            const candidate = await this.setCandidate(user);
-            user['candidate'] = candidate;
 
             const { accessToken, refreshToken } = await this.setTokens(user);
 
@@ -269,38 +253,43 @@ export class AuthService {
         }
     };
 
-    async refresh(req: Request, res: Response) {
-        const refreshToken = req.cookies?.refreshToken;
-
-        if (!refreshToken) {
-            throw new BadRequestException('Missing refresh token');
+    async refreshAccessToken(refreshToken: string, res: Response): Promise<string> {
+        const refreshTokenSecret = process.env.JWT_REFRESH_SECRET;
+        if (!refreshTokenSecret) {
+            throw new Error('FATAL: JWT_REFRESH_SECRET environment variable is not set');
         }
 
-        try {
-            const refreshTokenSecret = process.env.JWT_REFRESH_SECRET;
-            if (!refreshTokenSecret) {
-                throw new Error('FATAL: JWT_REFRESH_SECRET environment variable is not set');
-            }
-            const payload: any = jwt.verify(refreshToken, refreshTokenSecret);
-            const [user] = await this.db.select().from(users).where(eq(users.id, payload.userId));
+        const payload: any = jwt.verify(refreshToken, refreshTokenSecret);
+        const [user] = await this.db.select().from(users).where(eq(users.id, payload.userId));
 
-            if (!user || !user.refreshTokens || !user.refreshTokens.includes(refreshToken)) {
-                throw new BadRequestException('Invalid refresh token');
-            }
-
-            const { accessToken: newAccessToken, refreshToken: newRefreshToken } = this.generateTokens(user.id);
-
-            const filteredTokens = user.refreshTokens.filter(token => token !== refreshToken);
-            filteredTokens.push(newRefreshToken);
-
-            await this.db.update(users)
-                .set({ refreshTokens: filteredTokens })
-                .where(eq(users.id, user.id));
-
-            return this.sendAuthResponse(res, new UserDto(user), newAccessToken, newRefreshToken);
-        } catch (err: any) {
-            throw new BadRequestException('Invalid refresh token');
+        if (!user || !user.refreshTokens || !user.refreshTokens.includes(refreshToken)) {
+            throw new Error('Invalid refresh token');
         }
-    };
+
+        const { accessToken: newAccessToken, refreshToken: newRefreshToken } = this.generateTokens(user.id);
+
+        const filteredTokens = user.refreshTokens.filter(token => token !== refreshToken);
+        filteredTokens.push(newRefreshToken);
+
+        await this.db.update(users)
+            .set({ refreshTokens: filteredTokens })
+            .where(eq(users.id, user.id));
+
+        res.cookie('accessToken', newAccessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 15 * 60 * 1000, // 15m
+        });
+
+        res.cookie('refreshToken', newRefreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 7 * 24 * 60 * 60 * 1000, // 7d
+        });
+
+        return user.id;
+    }
 
 }

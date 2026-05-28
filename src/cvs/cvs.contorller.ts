@@ -1,23 +1,24 @@
-import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException, Get, Body, Param } from '@nestjs/common';
+import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException, Get } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CVService } from './cvs.service';
 import { CVFileValidator } from './cvs.validator';
+import { UserId } from 'src/common/decorators/user-id.decorator';
 
 
 @Controller('cv')
 export class CVController {
     constructor(private readonly cvService: CVService) { }
 
-    @Get(':candidateId')
-    async getCVs(@Param('candidateId') candidateId: string) {
-        return await this.cvService.getCVs(candidateId);
+    @Get()
+    async getCVs(@UserId() userId: string) {
+        return await this.cvService.getCVs(userId);
     }
 
     @Post('/upload')
     @UseInterceptors(FileInterceptor('file'))
     async uploadCV(
         @UploadedFile(new CVFileValidator()) file: Express.Multer.File,
-        @Body('userId') userId: string
+        @UserId() userId: string
     ) {
         if (!file) {
             throw new BadRequestException('No file received!');

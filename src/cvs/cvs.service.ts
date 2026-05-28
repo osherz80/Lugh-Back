@@ -382,13 +382,13 @@ export class CVService {
         return { score, ats, layout, keywords, impact, tips: finalTips };
     }
 
-    async uploadCv(file: Express.Multer.File, userId: string) {
+    async uploadCv(file: Express.Multer.File, profileId: string) {
         try {
             const cvCleanText = await this.parseCV(file);
             const { roleTag } = await this.getRoleTag(cvCleanText);
             const cvAnalysis = await this.getCVFullAnalysis(cvCleanText, roleTag, file)
             const cv = await this.db.insert(schema.cvs).values({
-                candidateId: userId,
+                profileId: profileId,
                 content: cvCleanText,
                 fileName: file.originalname,
                 atsScore: cvAnalysis.ats.overallScore,
@@ -405,11 +405,11 @@ export class CVService {
         }
     }
 
-    async getCVs(candidateId: string) {
+    async getCVs(profileId: string) {
         try {
-            console.log("getting cvs for candidate: ", candidateId);
+            console.log("getting cvs for smart profile: ", profileId);
             return await this.db.query.cvs.findMany({
-                where: (cvs) => eq(cvs.candidateId, candidateId),
+                where: (cvs) => eq(cvs.profileId, profileId),
                 columns: {
                     embedding: false,
                     content: false,

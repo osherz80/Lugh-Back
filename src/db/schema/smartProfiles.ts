@@ -1,17 +1,52 @@
-import { pgTable, uuid, text, vector, index, timestamp, integer } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, integer, jsonb, text, timestamp, boolean } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
+import { cvs, education, jobExperiences, users } from './index';
 
-import { cvs, users, candidates } from './index';
+export const smartProfiles = pgTable('smart_profiles', {
+    profileId: uuid('profile_id').primaryKey().defaultRandom(),
+    candidateId: uuid('candidate_id')
+        .notNull()
+        .references(() => users.id, { onDelete: 'cascade' }),
 
-export const smartProfiles = pgTable('smartProfiles', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    // candidateId: uuid('candidate_id')
-    //     .references(() => candidates.userId, { onDelete: 'cascade' }),
-    fullName: text('full_name').notNull(),
-    roleTag: text('role_tag').notNull(),
-    experience: integer('experience').notNull(),
-    country: text('country').notNull(),
-    city: text('city').notNull(),
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
+    // Basics
+    fullName: varchar('full_name', { length: 50 }),
+    targetRole: varchar('target_role', { length: 50 }),
+    yearsOfExperience: integer('years_of_experience').default(0),
+    country: varchar('country', { length: 25 }),
+    city: varchar('city', { length: 25 }),
+
+    // Skills
+    skills: jsonb('skills').$type<Record<string, string>>().default({}),
+
+    // Persona
+    persona: jsonb('persona').$type<{
+        style: string[];
+        strengths: string[];
+        story: string;
+    }>().default({ style: [], strengths: [], story: "" }),
+
+    // Contact
+    phone: varchar('phone', { length: 20 }),
+    email: varchar('email', { length: 100 }),
+    linkedin: text('linkedin'),
+    github: text('github'),
+    portfolio: text('portfolio'),
+
+    // Extra
+    anythingElse: text('anything_else'),
+    currentStep: integer('current_step').default(1),
+    isMaster: boolean('is_master').default(false),
+
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+export const smartProfilesRelations = relations(smartProfiles, ({ one, many }) => ({
+    user: one(users, {
+        fields: [smartProfiles.candidateId],
+        references: [users.id],
+    }),
+    experiences: many(jobExperiences),
+    education: many(education),
+    cvs: many(cvs)
+}));

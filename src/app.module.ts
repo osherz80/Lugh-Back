@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ParserModule } from './parser/parser.module';
@@ -7,6 +7,8 @@ import { DrizzleModule } from './drizzle/drizzle.module';
 import { JobsModule } from './jobs/job.module';
 import { CVModule } from './cvs/cvs.module';
 import { AuthModule } from './auth/auth.module';
+import { SmartProfileModule } from './smartProfile/smartProfile.module';
+import { AuthMiddleware } from './common/middleware/auth.middleware';
 
 
 @Module({
@@ -17,8 +19,21 @@ import { AuthModule } from './auth/auth.module';
     JobsModule,
     CVModule,
     AuthModule,
+    SmartProfileModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(AuthMiddleware)
+      .exclude(
+        { path: 'auth/login', method: RequestMethod.POST },
+        { path: 'auth/register', method: RequestMethod.POST },
+        { path: 'auth/google', method: RequestMethod.POST },
+        { path: 'auth/refresh', method: RequestMethod.POST },
+      )
+      .forRoutes('*');
+  }
+}

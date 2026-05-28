@@ -1,6 +1,6 @@
 import { pgTable, uuid, text, timestamp } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { candidates } from './index';
+import { smartProfiles } from './index';
 
 export const users = pgTable('users', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -13,9 +13,6 @@ export const users = pgTable('users', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-export const usersRelations = relations(users, ({ one }) => ({
-    candidate: one(candidates, {
-        fields: [users.id],
-        references: [candidates.userId],
-    }),
+export const usersRelations = relations(users, ({ many }) => ({
+    smartProfiles: many(smartProfiles),
 }));
