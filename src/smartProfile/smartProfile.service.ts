@@ -536,6 +536,59 @@ export class SmartProfileService {
         }
     }
 
+    async createStructuredSkills(fullProfile: FullSmartProfile, expBullets?: string[]) {
+        const skillsSchema = {
+            type: 'OBJECT',
+            properties: {
+                categories: {
+                    type: 'ARRAY',
+                    items: {
+                        type: 'OBJECT',
+                        properties: {
+                            category: { type: 'STRING' },
+                            skills: { type: 'ARRAY', items: { type: 'STRING' } }
+                        },
+                        required: ['category', 'skills']
+                    }
+                }
+            },
+            required: ['categories']
+        };
+        const bullets = [
+            "Developed a high-performance React Native mobile application from scratch to support a user base of 200,000, ensuring seamless integration with existing web infrastructure.",
+            "Engineered full-stack features for both front-end and back-end systems, improving overall application scalability and user experience.",
+            "Maintained and optimized critical microservices to ensure high availability and consistent performance across the platform.",
+            "Executed a comprehensive migration of the codebase from Azure DevOps to GitHub, streamlining development workflows and version control processes.",
+            "Led the infrastructure migration from Azure to AWS, enhancing system reliability and reducing operational costs through cloud-native best practices."
+        ]
+        const { skills, targetRole, experiences } = fullProfile
+
+        try {
+            const promptReadyData = {
+                targetRole,
+                selectedSkillsWithContext: skills,
+                experienceBullets: bullets,
+            };
+
+            const userPrompt = JSON.stringify(promptReadyData);
+
+            const aiResult = await askAiV2<{ categories: { category: string, skills: string[] } }>(
+                spPrompts.SP_CV_STRUCTURED_SKILLS_GENERATOR,
+                userPrompt,
+                0.3,
+                skillsSchema
+            );
+            console.log("aiResult is", aiResult);
+            return aiResult;
+
+        }
+        catch (err: any) {
+            console.error('Error creating structured skills:', err);
+            throw new BadRequestException(err.message);
+        }
+
+    }
+
     async smartProfileToCv(userId: string, smartProfileId: string) {
         try {
             const fullProfile = await this.getFullProfile(smartProfileId, userId);
@@ -544,9 +597,10 @@ export class SmartProfileService {
             }
             // const summary = await this.createCvSummarySection(fullProfile);
             // console.log("summary is", summary);
-            const expBullets = await this.createExpBullets(fullProfile);
-            console.log("expBullets is", expBullets);
-            return expBullets;
+            // const expBullets = await this.createExpBullets(fullProfile);
+            // console.log("expBullets is", expBullets);
+            const structuredSkills = await this.createStructuredSkills(fullProfile);
+            return structuredSkills;
         } catch (err: any) {
             console.error('Error creating cv summary section:', err);
             throw new BadRequestException(err.message);
