@@ -198,6 +198,20 @@ export class SmartProfileService {
         }
     }
 
+    async createSkeletonProfile(userId: string) {
+        if (!userId) {
+            console.error("Missing candidate ID in create smart profile");
+            throw new BadRequestException("Missing candidate ID");
+        }
+        try {
+            const newProfile = await this.db.insert(schema.smartProfiles).values({ candidateId: userId }).returning().execute();
+            return newProfile[0];
+        } catch (err: any) {
+            console.error('Error creating smart profile:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
     async upsertEducation(stepData: Education[], profileId: string) {
         try {
             if (!stepData || !Array.isArray(stepData) || stepData.length === 0) {
