@@ -595,12 +595,11 @@ export class SmartProfileService {
             if (!fullProfile) {
                 throw new BadRequestException("Profile not found");
             }
-            // const summary = await this.createCvSummarySection(fullProfile);
-            // console.log("summary is", summary);
-            // const expBullets = await this.createExpBullets(fullProfile);
-            // console.log("expBullets is", expBullets);
+            const summary = await this.createCvSummarySection(fullProfile);
+            const expBullets = await this.createExpBullets(fullProfile);
             const structuredSkills = await this.createStructuredSkills(fullProfile);
-            return structuredSkills;
+            const { education } = fullProfile;
+            return { summary, expBullets, structuredSkills, fullProfile };
         } catch (err: any) {
             console.error('Error creating cv summary section:', err);
             throw new BadRequestException(err.message);
