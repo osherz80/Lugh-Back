@@ -6,6 +6,8 @@ import * as schema from '../db/schema/index';
 import { eq } from 'drizzle-orm';
 import { FullSmartProfile, OtherSmartProfile, SmartProfileRes, SmartProfileSection } from 'src/common/types/general';
 import { PROFILE_SECTIONS } from 'src/common/helpers/consts';
+import { askAiV2 } from 'src/common/helpers/ai';
+import * as spPrompts from 'src/common/prompts/smartProfile'
 
 type SmartProfile = InferSelectModel<typeof schema.smartProfiles>;
 type Education = InferSelectModel<typeof schema.education>;
@@ -237,6 +239,32 @@ export class SmartProfileService {
         }
     }
 
+    async deleteEducation(educationId: string, userId: string) {
+        try {
+            const education = await this.db.select()
+                .from(schema.education)
+                .where(eq(schema.education.id, educationId))
+                .execute();
+
+            if (!education || education.length === 0) {
+                throw new BadRequestException("Education not found");
+            }
+
+            const profileId = education[0].profileId;
+            const isBelong = await this.checkProfileBelongToUser(profileId, userId);
+            if (!isBelong) {
+                throw new BadRequestException("Profile does not belong to user");
+            }
+            const results = await this.db.delete(schema.education)
+                .where(eq(schema.education.id, educationId))
+                .execute();
+            return results;
+        } catch (err: any) {
+            console.error('Error deleting education:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
     async upsertJobExperience(stepData: JobExperience[], profileId: string) {
         try {
             if (!stepData || !Array.isArray(stepData) || stepData.length === 0) {
@@ -276,6 +304,32 @@ export class SmartProfileService {
 
         } catch (err: any) {
             console.error('Error upserting job experience:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async deleteJobExperience(experienceId: string, userId: string) {
+        try {
+            const jobExperience = await this.db.select()
+                .from(schema.jobExperiences)
+                .where(eq(schema.jobExperiences.id, experienceId))
+                .execute();
+
+            if (!jobExperience || jobExperience.length === 0) {
+                throw new BadRequestException("Job experience not found");
+            }
+
+            const profileId = jobExperience[0].profileId;
+            const isBelong = await this.checkProfileBelongToUser(profileId, userId);
+            if (!isBelong) {
+                throw new BadRequestException("Profile does not belong to user");
+            }
+            const results = await this.db.delete(schema.jobExperiences)
+                .where(eq(schema.jobExperiences.id, experienceId))
+                .execute();
+            return results;
+        } catch (err: any) {
+            console.error('Error deleting job experience:', err);
             throw new BadRequestException(err.message);
         }
     }
@@ -401,6 +455,100 @@ export class SmartProfileService {
             return results2;
         } catch (err: any) {
             console.error('Error setting master:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async createCvSummarySection(smartProfile: FullSmartProfile) {
+        try {
+
+            const dataForSummary = {
+                targetRole: smartProfile.targetRole,
+                yearsOfExperience: smartProfile.yearsOfExperience,
+                persona: {
+                    story: smartProfile.persona?.story,
+                    style: smartProfile.persona?.style,
+                    strengths: smartProfile.persona?.strengths,
+                }
+            };
+
+            const promptReadyData = `Here is the candidate data to process: ${JSON.stringify(dataForSummary)}`;
+
+            const summary = await askAiV2(spPrompts.SP_CV_SUMMARY_GENERATOR_V2, promptReadyData)
+            return summary;
+        }
+        catch (err: any) {
+            console.error('Error creating cv summary section:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async createExpBullets(fullProfile: FullSmartProfile) {
+        const bulletsSchema = {
+            type: 'OBJECT',
+            properties: {
+                bullets: {
+                    type: 'ARRAY',
+                    items: { type: 'STRING' }
+                }
+            },
+            required: ['bullets']
+        };
+
+        const currentJobInstruction = "This is the candidate's CURRENT role. Write all bullets strictly in the PRESENT tense (e.g., Manage, Implement, Coordinate)."
+        const prevJobInstruction = "This is a PAST role. Write all bullets strictly in the PAST tense (e.g., Managed, Implemented, Coordinated)."
+
+        try {
+
+            const processedExperiences = await Promise.all(
+                fullProfile.experiences.map(async (exp) => {
+
+                    const promptReadyData = {
+                        roleTag: exp.roleTag || fullProfile.targetRole,
+                        description: exp.description,
+                        timeContext: exp.isCurrent ? currentJobInstruction : prevJobInstruction
+                    };
+
+
+                    const aiResult = await askAiV2<{ bullets: string[] }>(
+                        spPrompts.SP_CV_EXP_BULLETS_GENERATOR,
+                        promptReadyData,
+                        0.3,
+                        bulletsSchema
+                    );
+
+                    return {
+                        id: exp.id,
+                        company: exp.company,
+                        roleTag: exp.roleTag,
+                        startDate: exp.startDate,
+                        endDate: exp.endDate,
+                        isCurrent: exp.isCurrent,
+                        bullets: aiResult?.bullets || []
+                    };
+                })
+            );
+            console.log('expBullets is', processedExperiences);
+            return processedExperiences;
+        } catch (err: any) {
+            console.error('Error creating exp bullets:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async smartProfileToCv(userId: string, smartProfileId: string) {
+        try {
+            const fullProfile = await this.getFullProfile(smartProfileId, userId);
+            if (!fullProfile) {
+                throw new BadRequestException("Profile not found");
+            }
+            // const summary = await this.createCvSummarySection(fullProfile);
+            // console.log("summary is", summary);
+            const expBullets = await this.createExpBullets(fullProfile);
+            console.log("expBullets is", expBullets);
+            return expBullets;
+        } catch (err: any) {
+            console.error('Error creating cv summary section:', err);
             throw new BadRequestException(err.message);
         }
     }

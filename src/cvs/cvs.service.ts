@@ -8,10 +8,10 @@ import { askAi } from "src/common/helpers/ai";
 import { ANALYSIS_METRICS, CV_CHECK_PATTERNS, FILE_TYPES_MAP } from "src/common/helpers/consts";
 import { cleanText, getFileType } from "src/common/helpers/utils";
 import { calculateOverallScore, createOrderedPageRender, filterTips } from "./utils/utils";
-import * as prompts from "src/common/helpers/prompts";
 import { DRIZZLE } from "src/drizzle/drizzle.module";
 import * as schema from '../db/schema/index';
 import { CVFullAnalysis, CVMetricAnalysis, CVDeterministicAnalysis, RoleTag, CVSmartAnalysis, CVTip } from "./types/cv";
+import * as prompts from "src/common/prompts/cvAnalizer";
 
 
 interface ExtendedLoadParameters extends LoadParameters {

@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param, Patch } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Patch, Delete } from '@nestjs/common';
 import { SmartProfileService } from './smartProfile.service';
 import { UserId } from 'src/common/decorators/user-id.decorator';
 import { FullSmartProfile, SmartProfile, SmartProfileSection } from 'src/common/types/general';
@@ -20,6 +20,10 @@ export class SmartProfileController {
     async getAllSmartProfilesByUser(@UserId() userId: string) {
         return await this.smartProfileService.getAllSmartProfilesByUser(userId);
     }
+    @Post('/cv/:smartProfileId')
+    async createCv(@UserId() userId: string, @Param('smartProfileId') smartProfileId: string) {
+        return await this.smartProfileService.smartProfileToCv(userId, smartProfileId);
+    }
     @Patch()
     async upsertSmartProfile(@UserId() userId: string, @Body() { stepData, section, profileId }: { stepData: Partial<FullSmartProfile>, section: SmartProfileSection, profileId?: string }) {
         return await this.smartProfileService.handleUpsert(stepData, section, userId, profileId);
@@ -27,5 +31,15 @@ export class SmartProfileController {
     @Patch('/setMaster')
     async setMaster(@UserId() userId: string, @Body() { profileId }: { profileId: string }) {
         return await this.smartProfileService.setMaster(userId, profileId);
+    }
+
+    @Delete('experience/:experienceId')
+    async deleteExperience(@UserId() userId: string, @Param('experienceId') experienceId: string) {
+        return await this.smartProfileService.deleteJobExperience(experienceId, userId);
+    }
+
+    @Delete('education/:educationId')
+    async deleteEducation(@UserId() userId: string, @Param('educationId') educationId: string) {
+        return await this.smartProfileService.deleteEducation(educationId, userId);
     }
 }

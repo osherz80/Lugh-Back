@@ -46,6 +46,45 @@ export const askAi = async <T>(prompt: string): Promise<T | undefined> => {
     }
 }
 
+export const askAiV2 = async <T>(
+    systemPrompt: string,
+    data: any,
+    temp: number = 0.7,
+    responseSchema?: any
+): Promise<T | undefined> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+        const defaultSchema = {
+            type: 'OBJECT',
+            properties: { summary: { type: 'STRING' } },
+            required: ['summary']
+        };
+
+        const textContent = typeof data === 'object' ? JSON.stringify(data) : String(data);
+
+        const response = await ai.models.generateContent({
+            model: GEMINI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
+            contents: textContent,
+            config: {
+                systemInstruction: systemPrompt,
+                responseMimeType: 'application/json',
+                responseSchema: responseSchema || defaultSchema,
+                temperature: temp
+            }
+        });
+
+        if (response.text) {
+            return parseAiResponse(response.text);
+        } else {
+            throw new Error('Failed to ask ai: No response text returned.');
+        }
+    } catch (error) {
+        console.error('Failed to ask ai: ', error);
+        throw new Error('Failed to ask ai: ' + error.message);
+    }
+}
+
 export const getEmbedding = async (text: string): Promise<number[]> => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
