@@ -1,6 +1,6 @@
 import { pgTable, uuid, text, timestamp } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { smartProfiles } from './index';
+import { cvs, smartProfiles } from './index';
 
 export const users = pgTable('users', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -15,4 +15,5 @@ export const users = pgTable('users', {
 
 export const usersRelations = relations(users, ({ many }) => ({
     smartProfiles: many(smartProfiles),
+    cvs: many(cvs),
 }));

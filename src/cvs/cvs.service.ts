@@ -8,10 +8,11 @@ import { askAi } from "src/common/helpers/ai";
 import { ANALYSIS_METRICS, CV_CHECK_PATTERNS, FILE_TYPES_MAP } from "src/common/helpers/consts";
 import { cleanText, getFileType } from "src/common/helpers/utils";
 import { calculateOverallScore, createOrderedPageRender, filterTips } from "./utils/utils";
-import * as prompts from "src/common/helpers/prompts";
 import { DRIZZLE } from "src/drizzle/drizzle.module";
 import * as schema from '../db/schema/index';
 import { CVFullAnalysis, CVMetricAnalysis, CVDeterministicAnalysis, RoleTag, CVSmartAnalysis, CVTip } from "./types/cv";
+import * as prompts from "src/common/prompts/cvAnalizer";
+import { SmartProfileService } from "../smartProfile/smartProfile.service";
 
 
 interface ExtendedLoadParameters extends LoadParameters {
@@ -20,7 +21,10 @@ interface ExtendedLoadParameters extends LoadParameters {
 
 @Injectable()
 export class CVService {
-    constructor(@Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>) { }
+    constructor(
+        @Inject(DRIZZLE) private db: PostgresJsDatabase<typeof schema>,
+        private readonly smartProfileService: SmartProfileService,
+    ) { }
 
     async parseDocx(file: Express.Multer.File): Promise<string> {
         try {
@@ -382,13 +386,14 @@ export class CVService {
         return { score, ats, layout, keywords, impact, tips: finalTips };
     }
 
-    async uploadCv(file: Express.Multer.File, profileId: string) {
+    async uploadCv(file: Express.Multer.File, userId: string) {
         try {
             const cvCleanText = await this.parseCV(file);
             const { roleTag } = await this.getRoleTag(cvCleanText);
-            const cvAnalysis = await this.getCVFullAnalysis(cvCleanText, roleTag, file)
-            const cv = await this.db.insert(schema.cvs).values({
-                profileId: profileId,
+            const cvAnalysis = await this.getCVFullAnalysis(cvCleanText, roleTag, file);
+
+            const [cv] = await this.db.insert(schema.cvs).values({
+                candidateId: userId,
                 content: cvCleanText,
                 fileName: file.originalname,
                 atsScore: cvAnalysis.ats.overallScore,
@@ -398,18 +403,20 @@ export class CVService {
                 overallScore: cvAnalysis.score,
                 roleTag: roleTag,
                 tips: cvAnalysis.tips
-            })
+            }).returning().execute();
+
+            return cv;
         } catch (err) {
-            console.log("error uploading cv", err)
-            throw new Error("error uploading cv")
+            console.log("error uploading cv", err);
+            throw new Error("error uploading cv");
         }
     }
 
-    async getCVs(profileId: string) {
+    async getCVs(userId: string) {
         try {
-            console.log("getting cvs for smart profile: ", profileId);
+            console.log("getting cvs for smart profile: ", userId);
             return await this.db.query.cvs.findMany({
-                where: (cvs) => eq(cvs.profileId, profileId),
+                where: (cvs) => eq(cvs.candidateId, userId),
                 columns: {
                     embedding: false,
                     content: false,
@@ -418,6 +425,28 @@ export class CVService {
         } catch (err) {
             console.log("error getting cvs", err)
             throw new Error("error getting cvs")
+        }
+    }
+
+    async getProfileCVs(userId: string, smartProfileId: string) {
+        try {
+
+            const isBelong = await this.smartProfileService.checkProfileBelongToUser(userId, smartProfileId);
+            if (!isBelong) {
+                console.log("error profile not belong to user");
+                throw new Error("Could not find smart profile");
+            }
+            const cvs = await this.db.query.cvs.findMany({
+                where: (cvs) => eq(cvs.profileId, smartProfileId),
+                columns: {
+                    embedding: false,
+                    content: false,
+                }
+            })
+            return cvs
+        } catch (err) {
+            console.log("error getting profile cvs", err)
+            throw new Error("error getting profile cvs")
         }
     }
 }

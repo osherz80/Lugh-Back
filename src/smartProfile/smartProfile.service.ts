@@ -6,6 +6,8 @@ import * as schema from '../db/schema/index';
 import { eq } from 'drizzle-orm';
 import { FullSmartProfile, OtherSmartProfile, SmartProfileRes, SmartProfileSection } from 'src/common/types/general';
 import { PROFILE_SECTIONS } from 'src/common/helpers/consts';
+import { askAiV2 } from 'src/common/helpers/ai';
+import * as spPrompts from 'src/common/prompts/smartProfile'
 
 type SmartProfile = InferSelectModel<typeof schema.smartProfiles>;
 type Education = InferSelectModel<typeof schema.education>;
@@ -196,6 +198,20 @@ export class SmartProfileService {
         }
     }
 
+    async createSkeletonProfile(userId: string) {
+        if (!userId) {
+            console.error("Missing candidate ID in create smart profile");
+            throw new BadRequestException("Missing candidate ID");
+        }
+        try {
+            const newProfile = await this.db.insert(schema.smartProfiles).values({ candidateId: userId }).returning().execute();
+            return newProfile[0];
+        } catch (err: any) {
+            console.error('Error creating smart profile:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
     async upsertEducation(stepData: Education[], profileId: string) {
         try {
             if (!stepData || !Array.isArray(stepData) || stepData.length === 0) {
@@ -233,6 +249,32 @@ export class SmartProfileService {
 
         } catch (err: any) {
             console.error('Error upserting education:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async deleteEducation(educationId: string, userId: string) {
+        try {
+            const education = await this.db.select()
+                .from(schema.education)
+                .where(eq(schema.education.id, educationId))
+                .execute();
+
+            if (!education || education.length === 0) {
+                throw new BadRequestException("Education not found");
+            }
+
+            const profileId = education[0].profileId;
+            const isBelong = await this.checkProfileBelongToUser(profileId, userId);
+            if (!isBelong) {
+                throw new BadRequestException("Profile does not belong to user");
+            }
+            const results = await this.db.delete(schema.education)
+                .where(eq(schema.education.id, educationId))
+                .execute();
+            return results;
+        } catch (err: any) {
+            console.error('Error deleting education:', err);
             throw new BadRequestException(err.message);
         }
     }
@@ -276,6 +318,32 @@ export class SmartProfileService {
 
         } catch (err: any) {
             console.error('Error upserting job experience:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async deleteJobExperience(experienceId: string, userId: string) {
+        try {
+            const jobExperience = await this.db.select()
+                .from(schema.jobExperiences)
+                .where(eq(schema.jobExperiences.id, experienceId))
+                .execute();
+
+            if (!jobExperience || jobExperience.length === 0) {
+                throw new BadRequestException("Job experience not found");
+            }
+
+            const profileId = jobExperience[0].profileId;
+            const isBelong = await this.checkProfileBelongToUser(profileId, userId);
+            if (!isBelong) {
+                throw new BadRequestException("Profile does not belong to user");
+            }
+            const results = await this.db.delete(schema.jobExperiences)
+                .where(eq(schema.jobExperiences.id, experienceId))
+                .execute();
+            return results;
+        } catch (err: any) {
+            console.error('Error deleting job experience:', err);
             throw new BadRequestException(err.message);
         }
     }
@@ -401,6 +469,153 @@ export class SmartProfileService {
             return results2;
         } catch (err: any) {
             console.error('Error setting master:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async createCvSummarySection(smartProfile: FullSmartProfile) {
+        try {
+
+            const dataForSummary = {
+                targetRole: smartProfile.targetRole,
+                yearsOfExperience: smartProfile.yearsOfExperience,
+                persona: {
+                    story: smartProfile.persona?.story,
+                    style: smartProfile.persona?.style,
+                    strengths: smartProfile.persona?.strengths,
+                }
+            };
+
+            const promptReadyData = `Here is the candidate data to process: ${JSON.stringify(dataForSummary)}`;
+
+            const summary = await askAiV2(spPrompts.SP_CV_SUMMARY_GENERATOR_V2, promptReadyData)
+            return summary;
+        }
+        catch (err: any) {
+            console.error('Error creating cv summary section:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async createExpBullets(fullProfile: FullSmartProfile) {
+        const bulletsSchema = {
+            type: 'OBJECT',
+            properties: {
+                bullets: {
+                    type: 'ARRAY',
+                    items: { type: 'STRING' }
+                }
+            },
+            required: ['bullets']
+        };
+
+        const currentJobInstruction = "This is the candidate's CURRENT role. Write all bullets strictly in the PRESENT tense (e.g., Manage, Implement, Coordinate)."
+        const prevJobInstruction = "This is a PAST role. Write all bullets strictly in the PAST tense (e.g., Managed, Implemented, Coordinated)."
+
+        try {
+
+            const processedExperiences = await Promise.all(
+                fullProfile.experiences.map(async (exp) => {
+
+                    const promptReadyData = {
+                        roleTag: exp.roleTag || fullProfile.targetRole,
+                        description: exp.description,
+                        timeContext: exp.isCurrent ? currentJobInstruction : prevJobInstruction
+                    };
+
+
+                    const aiResult = await askAiV2<{ bullets: string[] }>(
+                        spPrompts.SP_CV_EXP_BULLETS_GENERATOR,
+                        promptReadyData,
+                        0.3,
+                        bulletsSchema
+                    );
+
+                    return {
+                        id: exp.id,
+                        company: exp.company,
+                        roleTag: exp.roleTag,
+                        startDate: exp.startDate,
+                        endDate: exp.endDate,
+                        isCurrent: exp.isCurrent,
+                        bullets: aiResult?.bullets || []
+                    };
+                })
+            );
+            console.log('expBullets is', processedExperiences);
+            return processedExperiences;
+        } catch (err: any) {
+            console.error('Error creating exp bullets:', err);
+            throw new BadRequestException(err.message);
+        }
+    }
+
+    async createStructuredSkills(fullProfile: FullSmartProfile, expBullets?: string[]) {
+        const skillsSchema = {
+            type: 'OBJECT',
+            properties: {
+                categories: {
+                    type: 'ARRAY',
+                    items: {
+                        type: 'OBJECT',
+                        properties: {
+                            category: { type: 'STRING' },
+                            skills: { type: 'ARRAY', items: { type: 'STRING' } }
+                        },
+                        required: ['category', 'skills']
+                    }
+                }
+            },
+            required: ['categories']
+        };
+        const bullets = [
+            "Developed a high-performance React Native mobile application from scratch to support a user base of 200,000, ensuring seamless integration with existing web infrastructure.",
+            "Engineered full-stack features for both front-end and back-end systems, improving overall application scalability and user experience.",
+            "Maintained and optimized critical microservices to ensure high availability and consistent performance across the platform.",
+            "Executed a comprehensive migration of the codebase from Azure DevOps to GitHub, streamlining development workflows and version control processes.",
+            "Led the infrastructure migration from Azure to AWS, enhancing system reliability and reducing operational costs through cloud-native best practices."
+        ]
+        const { skills, targetRole, experiences } = fullProfile
+
+        try {
+            const promptReadyData = {
+                targetRole,
+                selectedSkillsWithContext: skills,
+                experienceBullets: bullets,
+            };
+
+            const userPrompt = JSON.stringify(promptReadyData);
+
+            const aiResult = await askAiV2<{ categories: { category: string, skills: string[] } }>(
+                spPrompts.SP_CV_STRUCTURED_SKILLS_GENERATOR,
+                userPrompt,
+                0.3,
+                skillsSchema
+            );
+            console.log("aiResult is", aiResult);
+            return aiResult;
+
+        }
+        catch (err: any) {
+            console.error('Error creating structured skills:', err);
+            throw new BadRequestException(err.message);
+        }
+
+    }
+
+    async smartProfileToCv(userId: string, smartProfileId: string) {
+        try {
+            const fullProfile = await this.getFullProfile(smartProfileId, userId);
+            if (!fullProfile) {
+                throw new BadRequestException("Profile not found");
+            }
+            const summary = await this.createCvSummarySection(fullProfile);
+            const expBullets = await this.createExpBullets(fullProfile);
+            const structuredSkills = await this.createStructuredSkills(fullProfile);
+            const { education } = fullProfile;
+            return { summary, expBullets, structuredSkills, fullProfile };
+        } catch (err: any) {
+            console.error('Error creating cv summary section:', err);
             throw new BadRequestException(err.message);
         }
     }
