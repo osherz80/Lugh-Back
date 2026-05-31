@@ -205,3 +205,4 @@ Output Format (Strict JSON):
 Resume Text:
 [RESUME_TEXT]
 `;
+
