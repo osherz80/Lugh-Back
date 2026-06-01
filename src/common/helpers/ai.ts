@@ -51,7 +51,7 @@ export const askAiV2 = async <T>(
     data: any,
     temp: number = 0.7,
     responseSchema?: any
-): Promise<T | undefined> => {
+): Promise<T> => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 

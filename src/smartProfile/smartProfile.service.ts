@@ -4,7 +4,7 @@ import { DRIZZLE } from 'src/drizzle/drizzle.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../db/schema/index';
 import { eq } from 'drizzle-orm';
-import { FullSmartProfile, OtherSmartProfile, SmartProfileRes, SmartProfileSection } from 'src/common/types/general';
+import { FullSmartProfile, OtherSmartProfile, SkillByCategory, SmartProfileRes, SmartProfileSection } from 'src/common/types/general';
 import { PROFILE_SECTIONS } from 'src/common/helpers/consts';
 import { askAiV2 } from 'src/common/helpers/ai';
 import * as spPrompts from 'src/common/prompts/smartProfile'
@@ -265,7 +265,7 @@ export class SmartProfileService {
             }
 
             const profileId = education[0].profileId;
-            const isBelong = await this.checkProfileBelongToUser(profileId, userId);
+            const isBelong = await this.checkProfileBelongToUser(profileId!, userId);
             if (!isBelong) {
                 throw new BadRequestException("Profile does not belong to user");
             }
@@ -334,7 +334,7 @@ export class SmartProfileService {
             }
 
             const profileId = jobExperience[0].profileId;
-            const isBelong = await this.checkProfileBelongToUser(profileId, userId);
+            const isBelong = await this.checkProfileBelongToUser(profileId!, userId);
             if (!isBelong) {
                 throw new BadRequestException("Profile does not belong to user");
             }
@@ -473,7 +473,7 @@ export class SmartProfileService {
         }
     }
 
-    async createCvSummarySection(smartProfile: FullSmartProfile) {
+    async createCvSummarySection(smartProfile: FullSmartProfile): Promise<string> {
         try {
 
             const dataForSummary = {
@@ -488,7 +488,7 @@ export class SmartProfileService {
 
             const promptReadyData = `Here is the candidate data to process: ${JSON.stringify(dataForSummary)}`;
 
-            const summary = await askAiV2(spPrompts.SP_CV_SUMMARY_GENERATOR_V2, promptReadyData)
+            const summary = await askAiV2<string>(spPrompts.SP_CV_SUMMARY_GENERATOR_V2, promptReadyData)
             return summary;
         }
         catch (err: any) {
@@ -531,6 +531,13 @@ export class SmartProfileService {
                         bulletsSchema
                     );
 
+                    await this.db.update(schema.jobExperiences)
+                        .set({
+                            bullets: aiResult?.bullets || []
+                        })
+                        .where(eq(schema.jobExperiences.id, exp.id))
+                        .execute();
+
                     return {
                         id: exp.id,
                         company: exp.company,
@@ -550,43 +557,34 @@ export class SmartProfileService {
         }
     }
 
-    async createStructuredSkills(fullProfile: FullSmartProfile, expBullets?: string[]) {
+    async createStructuredSkills(fullProfile: FullSmartProfile, expBullets: string[]) {
         const skillsSchema = {
-            type: 'OBJECT',
-            properties: {
-                categories: {
-                    type: 'ARRAY',
-                    items: {
-                        type: 'OBJECT',
-                        properties: {
-                            category: { type: 'STRING' },
-                            skills: { type: 'ARRAY', items: { type: 'STRING' } }
-                        },
-                        required: ['category', 'skills']
+            type: 'ARRAY',
+            items: {
+                type: 'OBJECT',
+                properties: {
+                    category: { type: 'STRING' },
+                    skills: {
+                        type: 'ARRAY',
+                        items: { type: 'STRING' }
                     }
-                }
-            },
-            required: ['categories']
+                },
+                required: ['category', 'skills']
+            }
         };
-        const bullets = [
-            "Developed a high-performance React Native mobile application from scratch to support a user base of 200,000, ensuring seamless integration with existing web infrastructure.",
-            "Engineered full-stack features for both front-end and back-end systems, improving overall application scalability and user experience.",
-            "Maintained and optimized critical microservices to ensure high availability and consistent performance across the platform.",
-            "Executed a comprehensive migration of the codebase from Azure DevOps to GitHub, streamlining development workflows and version control processes.",
-            "Led the infrastructure migration from Azure to AWS, enhancing system reliability and reducing operational costs through cloud-native best practices."
-        ]
-        const { skills, targetRole, experiences } = fullProfile
+
+        const { skills, targetRole } = fullProfile
 
         try {
             const promptReadyData = {
                 targetRole,
                 selectedSkillsWithContext: skills,
-                experienceBullets: bullets,
+                experienceBullets: expBullets,
             };
 
             const userPrompt = JSON.stringify(promptReadyData);
 
-            const aiResult = await askAiV2<{ categories: { category: string, skills: string[] } }>(
+            const aiResult = await askAiV2<SkillByCategory[]>(
                 spPrompts.SP_CV_STRUCTURED_SKILLS_GENERATOR,
                 userPrompt,
                 0.3,
@@ -611,8 +609,8 @@ export class SmartProfileService {
             }
             const summary = await this.createCvSummarySection(fullProfile);
             const expBullets = await this.createExpBullets(fullProfile);
-            const structuredSkills = await this.createStructuredSkills(fullProfile);
-            const { education } = fullProfile;
+            const allBullets = expBullets.reduce((acc: string[], exp) => acc.concat(exp.bullets), []);
+            const structuredSkills = await this.createStructuredSkills(fullProfile, allBullets);
             return { summary, expBullets, structuredSkills, fullProfile };
         } catch (err: any) {
             console.error('Error creating cv summary section:', err);
