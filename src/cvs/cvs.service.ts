@@ -13,6 +13,7 @@ import * as schema from '../db/schema/index';
 import { CVFullAnalysis, CVMetricAnalysis, CVDeterministicAnalysis, RoleTag, CVSmartAnalysis, CVTip } from "./types/cv";
 import * as prompts from "src/common/prompts/cvAnalizer";
 import { SmartProfileService } from "../smartProfile/smartProfile.service";
+import { CV } from "src/common/types/general";
 
 
 interface ExtendedLoadParameters extends LoadParameters {
@@ -447,6 +448,36 @@ export class CVService {
         } catch (err) {
             console.log("error getting profile cvs", err)
             throw new Error("error getting profile cvs")
+        }
+    }
+
+    async cvFromSmartProfile(userId: string, smartProfileId: string) {
+        const { fullProfile, summary, structuredSkills, expBullets } = await this.smartProfileService.smartProfileToCv(userId, smartProfileId);
+        const fileName = fullProfile.targetRole + " - " + new Date().toISOString().split('T')[0];
+
+        const cvData: Partial<CV> = {
+            candidateId: userId,
+            profileId: smartProfileId,
+            summary,
+            structuredSkills,
+            fileName,
+            email: fullProfile.email,
+            phone: fullProfile.phone,
+            roleTag: fullProfile.targetRole,
+            country: fullProfile.country,
+            city: fullProfile.city,
+            github: fullProfile.github,
+            portfolio: fullProfile.portfolio,
+            linkedIn: fullProfile.linkedin,
+        }
+
+        try {
+            const [cv] = await this.db.insert(schema.cvs).values(cvData as CV).returning().execute();
+            console.log("cv created: ", cv);
+            return cv;
+        } catch (err) {
+            console.log("error creating cv: ", err);
+            throw new Error("error creating cv");
         }
     }
 }

@@ -38,3 +38,4 @@ export type CVFullAnalysis = {
     impact: CVMetricAnalysis;
     tips: CVTip[];
 }
+

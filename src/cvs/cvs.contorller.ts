@@ -32,7 +32,10 @@ export class CVController {
         const result = await this.cvService.uploadCv(file, userId);
         return result;
     }
-
+    @Post('/from-profile/:smartProfileId')
+    async createCv(@UserId() userId: string, @Param('smartProfileId') smartProfileId: string) {
+        return await this.cvService.cvFromSmartProfile(userId, smartProfileId);
+    }
     // @Get('display')
     // async getCVsDisplay(@Query('candidateId') candidateId: string) {
     //     const cvs = await this.cvService.getCVsDisplay(candidateId);

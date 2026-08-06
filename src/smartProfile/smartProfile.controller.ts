@@ -20,10 +20,6 @@ export class SmartProfileController {
     async getAllSmartProfilesByUser(@UserId() userId: string) {
         return await this.smartProfileService.getAllSmartProfilesByUser(userId);
     }
-    @Post('/cv/:smartProfileId')
-    async createCv(@UserId() userId: string, @Param('smartProfileId') smartProfileId: string) {
-        return await this.smartProfileService.smartProfileToCv(userId, smartProfileId);
-    }
     @Patch()
     async upsertSmartProfile(@UserId() userId: string, @Body() { stepData, section, profileId }: { stepData: Partial<FullSmartProfile>, section: SmartProfileSection, profileId?: string }) {
         return await this.smartProfileService.handleUpsert(stepData, section, userId, profileId);

@@ -24,3 +24,5 @@ export type FullSmartProfile = SmartProfile & {
 }
 export type SmartProfileRes = FullSmartProfile & { otherProfiles: OtherSmartProfile[] }
 export type SmartProfileSection = (typeof PROFILE_SECTIONS)[keyof typeof PROFILE_SECTIONS];
+
+export type SkillByCategory = { category: string, skills: string[] }
