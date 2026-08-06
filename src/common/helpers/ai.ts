@@ -55,11 +55,6 @@ export const askAiV2 = async <T>(
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-        const defaultSchema = {
-            type: 'OBJECT',
-            properties: { summary: { type: 'STRING' } },
-            required: ['summary']
-        };
 
         const textContent = typeof data === 'object' ? JSON.stringify(data) : String(data);
 
@@ -69,7 +64,7 @@ export const askAiV2 = async <T>(
             config: {
                 systemInstruction: systemPrompt,
                 responseMimeType: 'application/json',
-                responseSchema: responseSchema || defaultSchema,
+                responseSchema: responseSchema,
                 temperature: temp
             }
         });

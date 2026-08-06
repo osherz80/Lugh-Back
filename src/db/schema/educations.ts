@@ -25,7 +25,8 @@ export const educationRelations = relations(education, ({ one }) => ({
         references: [smartProfiles.profileId],
     }),
     cv: one(cvs, {
-        fields: [education.profileId],
-        references: [cvs.profileId],
+        fields: [education.cvId],
+        references: [cvs.id],
+        relationName: 'cv_education',
     })
 }));

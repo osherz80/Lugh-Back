@@ -1,4 +1,4 @@
-import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException, Get, Param } from '@nestjs/common';
+import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException, Get, Param, Delete } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CVService } from './cvs.service';
 import { CVFileValidator } from './cvs.validator';
@@ -35,6 +35,10 @@ export class CVController {
     @Post('/from-profile/:smartProfileId')
     async createCv(@UserId() userId: string, @Param('smartProfileId') smartProfileId: string) {
         return await this.cvService.cvFromSmartProfile(userId, smartProfileId);
+    }
+    @Delete(':cvId')
+    async deleteCv(@Param('cvId') cvId: string) {
+        return await this.cvService.deleteCv(cvId);
     }
     // @Get('display')
     // async getCVsDisplay(@Query('candidateId') candidateId: string) {

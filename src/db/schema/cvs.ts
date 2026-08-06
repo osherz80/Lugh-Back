@@ -32,6 +32,8 @@ export const cvs = pgTable('cvs', {
     updatedAt: timestamp('updated_at').defaultNow(),
 
     // smart profile generated
+    fullName: text('full_name'),
+    yearsOfExperience: integer('years_of_experience').default(0),
     roleTag: text('role_tag'),
     country: text('country'),
     city: text('city'),
@@ -60,6 +62,6 @@ export const cvsProfileRelations = relations(cvs, ({ one, many }) => ({
         fields: [cvs.candidateId],
         references: [users.id],
     }),
-    experiences: many(jobExperiences),
-    education: many(education),
+    experiences: many(jobExperiences, { relationName: 'cv_experiences' }),
+    education: many(education, { relationName: 'cv_education' }),
 }));

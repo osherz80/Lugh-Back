@@ -475,7 +475,6 @@ export class SmartProfileService {
 
     async createCvSummarySection(smartProfile: FullSmartProfile): Promise<string> {
         try {
-
             const dataForSummary = {
                 targetRole: smartProfile.targetRole,
                 yearsOfExperience: smartProfile.yearsOfExperience,
@@ -486,10 +485,18 @@ export class SmartProfileService {
                 }
             };
 
+            const cvSummarySchema = {
+                type: 'OBJECT',
+                properties: {
+                    summary: { type: 'STRING' }
+                },
+                required: ['summary']
+            };
+
             const promptReadyData = `Here is the candidate data to process: ${JSON.stringify(dataForSummary)}`;
 
-            const summary = await askAiV2<string>(spPrompts.SP_CV_SUMMARY_GENERATOR_V2, promptReadyData)
-            return summary;
+            const aiResult = await askAiV2<{ summary: string }>(spPrompts.SP_CV_SUMMARY_GENERATOR_V2, promptReadyData, 0.3, cvSummarySchema)
+            return aiResult?.summary;
         }
         catch (err: any) {
             console.error('Error creating cv summary section:', err);
