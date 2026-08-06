@@ -28,5 +28,6 @@ export const jobExperiencesRelations = relations(jobExperiences, ({ one }) => ({
     cv: one(cvs, {
         fields: [jobExperiences.cvId],
         references: [cvs.id],
+        relationName: 'cv_experiences',
     }),
 }));

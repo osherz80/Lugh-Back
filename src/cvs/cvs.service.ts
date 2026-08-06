@@ -413,14 +413,28 @@ export class CVService {
         }
     }
 
+    async deleteCv(cvId: string) {
+        try {
+            await this.db.delete(schema.cvs).where(eq(schema.cvs.id, cvId)).execute();
+            return true;
+        } catch (err) {
+            console.log("error deleting cv", err);
+            throw new Error("error deleting cv");
+        }
+    }
+
     async getCVs(userId: string) {
         try {
-            console.log("getting cvs for smart profile: ", userId);
+            console.log("getting cvs for user: ", userId);
             return await this.db.query.cvs.findMany({
                 where: (cvs) => eq(cvs.candidateId, userId),
                 columns: {
                     embedding: false,
                     content: false,
+                },
+                with: {
+                    education: true,
+                    experiences: true
                 }
             })
         } catch (err) {

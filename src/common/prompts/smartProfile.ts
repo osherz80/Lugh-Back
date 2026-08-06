@@ -53,10 +53,7 @@ The summary must be tailored to their target industry, exactly 2 to 3 sentences 
 - NO MARKETING FLUFF: Absolutely forbid corporate, overused clichés and awkward phrasing like "this professional", "leveraging a mindset", or "driving digital transformation" unless explicitly required by a highly specific corporate role.
 - GROUNDED & REALISTIC: The tone must be sophisticated, clean, and direct. Write it so it sounds like a real human being summarizing their career, not a promotional brochure.
 - ACTIVE THIRD-PERSON: Write exclusively in the third person without personal pronouns (I, me, my). Start sentences directly with adjectives or action verbs (e.g., "Skilled in...", "Expertise includes...", "Focused on...").
-- NO CONVERSATIONAL FILLER: Return ONLY the valid JSON object. Do not include markdown wraps like \`\`\`json.
-
-### OUTPUT FORMAT:
-You must output a strictly valid JSON object with a single key: "summary".
+- NO CONVERSATIONAL FILLER!
 
 Example Output Structure:
 {
