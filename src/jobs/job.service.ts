@@ -3,21 +3,38 @@ import { desc, sql } from 'drizzle-orm';
 import { getEmbedding } from 'src/common/helpers/ai';
 import { db } from 'src/db';
 import { jobs } from 'src/db/schema';
+import { Job } from 'src/common/types/general';
 
 @Injectable()
 export class JobsService {
-  async createJob(jobDescription: string, jobTitle: string) {
-    if (!jobDescription || !jobTitle) {
-      throw new Error('Job description and job title are required');
+  async createJob(job: Job) {
+    if (!job) {
+      throw new Error('Job is required');
+    }
+    console.log('job: ', job)
+    try {
+      let embedding = await getEmbedding(job.description);
+      console.log('embedding: ', embedding)
+      embedding = embedding.slice(0, 256);
+      const result = await db.insert(jobs).values({
+        ...job,
+      });
+      return result;
+    } catch (err) {
+      console.log(err);
+    }
+  }
+
+  async autoCreateJob(job: Job) {
+    if (!job) {
+      throw new Error('Job is required');
     }
 
     try {
-      let embedding = await getEmbedding(jobDescription);
+      let embedding = await getEmbedding(job.description);
       embedding = embedding.slice(0, 256);
       const result = await db.insert(jobs).values({
-        title: jobTitle,
-        description: jobDescription,
-        embedding: embedding,
+        ...job,
       });
       return result;
     } catch (err) {

@@ -4,6 +4,7 @@ import { ANALYSIS_METRICS, PROFILE_SECTIONS } from "../helpers/consts";
 
 export type User = InferSelectModel<typeof schema.users>;
 export type CV = InferSelectModel<typeof schema.cvs>;
+export type Job = InferSelectModel<typeof schema.jobs>;
 
 export type FullUser = User & {
     smartProfiles?: SmartProfile[];
