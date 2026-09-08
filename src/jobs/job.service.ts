@@ -15,7 +15,6 @@ export class JobsService {
     try {
       let embedding = await getEmbedding(job.description);
       console.log('embedding: ', embedding)
-      embedding = embedding.slice(0, 256);
       const result = await db.insert(jobs).values({
         ...job,
       });
@@ -32,7 +31,6 @@ export class JobsService {
 
     try {
       let embedding = await getEmbedding(job.description);
-      embedding = embedding.slice(0, 256);
       const result = await db.insert(jobs).values({
         ...job,
       });
@@ -48,7 +46,6 @@ export class JobsService {
     }
     try {
       let embeddedQuery = await getEmbedding(jobSearch);
-      embeddedQuery = embeddedQuery.slice(0, 256);
 
       const similarity = sql<number>`1 - (${jobs.embedding} <=> ${JSON.stringify(embeddedQuery)})`;
 

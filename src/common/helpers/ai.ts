@@ -81,6 +81,12 @@ export const askAiV2 = async <T>(
 }
 
 export const getEmbedding = async (text: string): Promise<number[]> => {
+    let embedding
+    if (process.env.USE_LOCAL_MODEL === "true") {
+        embedding = await getLocalEmbedding(text)
+        embedding = embedding.slice(0, 256);
+        return embedding
+    }
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const response = await ai.models.embedContent({
@@ -93,9 +99,47 @@ export const getEmbedding = async (text: string): Promise<number[]> => {
             throw new Error("Failed to generate embedding: No embeddings returned.");
         }
 
-        return response.embeddings[0].values!;
+        embedding = response.embeddings[0].values!;
+        embedding = embedding.slice(0, 256);
+        return embedding
     } catch (error) {
         console.error('Failed to get embedding: ', error);
         throw new Error('Failed to get embedding: ' + error.message);
     }
 };
+
+// הגדרת טיפוס עבור התשובה מהשרת (בתקן OpenAI)
+interface EmbeddingResponse {
+    object: string;
+    data: {
+        object: string;
+        embedding: number[];
+        index: number;
+    }[];
+    model: string;
+    usage: {
+        prompt_tokens: number;
+        total_tokens: number;
+    };
+}
+
+export const getLocalEmbedding = async (text: string): Promise<number[]> => {
+    const response = await fetch("http://127.0.0.1:8000/v1/embeddings", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            input: text,
+        }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Error fetching embedding: ${response.statusText}`);
+    }
+
+    const data: EmbeddingResponse = await response.json();
+
+    // החזרת הוקטור הראשון ברשימה
+    return data.data[0].embedding;
+}
