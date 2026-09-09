@@ -4,7 +4,7 @@ import * as mammoth from "mammoth";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { eq } from "drizzle-orm";
 
-import { askAi } from "src/common/helpers/ai";
+import { askAi, getEmbedding } from "src/common/helpers/ai";
 import { ANALYSIS_METRICS, CV_CHECK_PATTERNS, FILE_TYPES_MAP } from "src/common/helpers/consts";
 import { cleanText, getFileType } from "src/common/helpers/utils";
 import { calculateOverallScore, createOrderedPageRender, filterTips } from "./utils/utils";
@@ -468,6 +468,7 @@ export class CVService {
     async cvFromSmartProfile(userId: string, smartProfileId: string) {
         const { fullProfile, summary, structuredSkills, expBullets } = await this.smartProfileService.smartProfileToCv(userId, smartProfileId);
         const fileName = fullProfile.targetRole + " - " + new Date().toISOString().split('T')[0];
+        const embedding = await getEmbedding(`${summary}, ${structuredSkills}, ${expBullets}`)
 
         const cvData: Partial<CV> = {
             candidateId: userId,
@@ -475,6 +476,7 @@ export class CVService {
             summary,
             structuredSkills,
             fileName,
+            embedding,
             email: fullProfile.email,
             phone: fullProfile.phone,
             roleTag: fullProfile.targetRole,
