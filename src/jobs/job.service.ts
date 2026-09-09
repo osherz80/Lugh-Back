@@ -112,11 +112,12 @@ export class JobsService {
   }
 
   async chunkAndEmbed(job: Job) {
-    const { id, createdAt, updatedAt, embedding, ...clearJob } = job
+    const { id, createdAt, updatedAt, embedding, salaryRange, ...clearJob } = job
     try {
       console.log("embedding job chunks")
       return await Promise.all(
         Object.keys(clearJob).map(async (key) => {
+          // console.log(`chunk key: ${key}\n chunk content: ${clearJob[key]}`)
           const embedding = await getEmbedding(clearJob[key])
           return {
             jobId: job.id,
