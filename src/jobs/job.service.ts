@@ -15,12 +15,14 @@ export class JobsService {
     console.log('job: ', job)
     try {
       let embedding = await getEmbedding(job.description);
-      await this.chunkEmbedInsert(job)
-      const result = await db.insert(jobs).values({
+      const [createdJob] = await db.insert(jobs).values({
         ...job,
         embedding
-      });
-      return result;
+      }).returning();
+
+      await this.chunkEmbedInsert(createdJob)
+
+      return createdJob;
     } catch (err) {
       console.log(err);
       return err
@@ -67,12 +69,14 @@ export class JobsService {
     try {
       let embedding = await getEmbedding(`${job.description}`);
       const structuredJob = await askAiV2<Job>(JOB_POST_EXTRACTOR, `here is the [JOB_POST]: ${job.description}`, 0.3, jobSchema)
-      await this.chunkEmbedInsert(structuredJob)
-      const result = await db.insert(jobs).values({
+      const [createdJob] = await db.insert(jobs).values({
         ...structuredJob,
         embedding
-      });
-      return result;
+      }).returning();
+
+      await this.chunkEmbedInsert(createdJob)
+
+      return createdJob;
     } catch (err) {
       console.log(err);
       return err
