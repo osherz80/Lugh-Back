@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { desc, sql } from 'drizzle-orm';
 import { askAiV2, getEmbedding } from 'src/common/helpers/ai';
 import { db } from 'src/db';
-import { jobs } from 'src/db/schema';
-import { Job } from 'src/common/types/general';
+import { documentChunks, jobs } from 'src/db/schema';
+import { Job, Chunk } from 'src/common/types/general';
 import { JOB_POST_EXTRACTOR } from 'src/common/prompts/jobs';
 
 @Injectable()
@@ -15,7 +15,7 @@ export class JobsService {
     console.log('job: ', job)
     try {
       let embedding = await getEmbedding(job.description);
-      console.log('embedding: ', embedding)
+      await this.chunkEmbedInsert(job)
       const result = await db.insert(jobs).values({
         ...job,
         embedding
@@ -23,6 +23,7 @@ export class JobsService {
       return result;
     } catch (err) {
       console.log(err);
+      return err
     }
   }
 
@@ -66,6 +67,7 @@ export class JobsService {
     try {
       let embedding = await getEmbedding(`${job.description}`);
       const structuredJob = await askAiV2<Job>(JOB_POST_EXTRACTOR, `here is the [JOB_POST]: ${job.description}`, 0.3, jobSchema)
+      await this.chunkEmbedInsert(structuredJob)
       const result = await db.insert(jobs).values({
         ...structuredJob,
         embedding
@@ -73,6 +75,7 @@ export class JobsService {
       return result;
     } catch (err) {
       console.log(err);
+      return err
     }
   }
 
@@ -100,6 +103,44 @@ export class JobsService {
       return results;
     } catch (err) {
       console.log(err);
+      return err
     }
+  }
+
+  async chunkAndEmbed(job: Job) {
+    const { id, createdAt, updatedAt, embedding, ...clearJob } = job
+    try {
+      console.log("embedding job chunks")
+      return await Promise.all(
+        Object.keys(clearJob).map(async (key) => {
+          const embedding = await getEmbedding(clearJob[key])
+          return {
+            jobId: job.id,
+            embedding,
+            chunkText: clearJob[key],
+            section: key,
+            chunkIndex: 0,
+            sourceType: 'job'
+          }
+        }))
+    } catch (err) {
+      console.log("error embedding job chunks")
+      return err
+    }
+  }
+
+  async inserJobChunks(chunks: Chunk[]) {
+    try {
+      console.log("inserting job chunks")
+      return await db.insert(documentChunks).values(chunks)
+    } catch (err) {
+      console.log("error inserting job chunks", err)
+      return err
+    }
+  }
+
+  async chunkEmbedInsert(job: Job) {
+    const chunks = await this.chunkAndEmbed(job)
+    return await this.inserJobChunks(chunks)
   }
 }
