@@ -1,7 +1,7 @@
 import { relations } from 'drizzle-orm';
 import { pgTable, uuid, text, vector, index, timestamp, boolean, integer, jsonb } from 'drizzle-orm/pg-core';
 import { CVTip } from 'src/cvs/types/cv';
-import { education, jobExperiences, smartProfiles, users } from './index';
+import { documentChunks, education, jobExperiences, smartProfiles, users } from './index';
 
 export const cvs = pgTable('cvs', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -64,4 +64,6 @@ export const cvsProfileRelations = relations(cvs, ({ one, many }) => ({
     }),
     experiences: many(jobExperiences, { relationName: 'cv_experiences' }),
     education: many(education, { relationName: 'cv_education' }),
+    chunks: many(documentChunks),
 }));
+
