@@ -4,3 +4,4 @@ export * from './cvs';
 export * from './jobExperience';
 export * from './smartProfiles';
 export * from './educations';
+export * from './documentChunks'

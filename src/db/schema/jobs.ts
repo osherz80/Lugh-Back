@@ -1,4 +1,6 @@
+import { relations } from 'drizzle-orm';
 import { pgTable, uuid, text, vector, index, timestamp } from 'drizzle-orm/pg-core';
+import { documentChunks } from './index';
 
 export const jobs = pgTable('jobs', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -23,3 +25,7 @@ export const jobs = pgTable('jobs', {
         jobEmbeddingIdx: index('job_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops')),
     };
 });
+
+export const jobsRelations = relations(jobs, ({ many }) => ({
+    chunks: many(documentChunks),
+}));
