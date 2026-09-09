@@ -1,5 +1,5 @@
 import { index, integer, pgTable, text, timestamp, uuid, vector, check } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import { jobs } from './jobs';
 import { cvs } from './cvs';
 
@@ -23,4 +23,9 @@ export const documentChunks = pgTable('document_chunks', {
     jobChunkIdx: index('job_chunk_idx').on(table.jobId),
     cvChunkIdx: index('cv_chunk_idx').on(table.cvId),
     chunkSrcExclusive: check('chunk_src_exclusive', sql`(job_id IS NOT NULL) <> (cv_id IS NOT NULL)`),
+}));
+
+export const chunksRelations = relations(documentChunks, ({ one }) => ({
+    job: one(jobs, { fields: [documentChunks.jobId], references: [jobs.id] }),
+    cv: one(cvs, { fields: [documentChunks.cvId], references: [cvs.id] }),
 }));
