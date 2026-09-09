@@ -17,6 +17,7 @@ export class JobsService {
       console.log('embedding: ', embedding)
       const result = await db.insert(jobs).values({
         ...job,
+        embedding
       });
       return result;
     } catch (err) {
@@ -33,6 +34,7 @@ export class JobsService {
       let embedding = await getEmbedding(job.description);
       const result = await db.insert(jobs).values({
         ...job,
+        embedding
       });
       return result;
     } catch (err) {
