@@ -15,10 +15,6 @@ export const cvs = pgTable('cvs', {
     fileUrl: text('file_url'),
     isMaster: boolean('is_master').default(false).notNull(),
 
-    // Content Layers
-    content: text('content'),
-    embedding: vector('embedding', { dimensions: 256 }),// TODO: add chunking(ColBERT)
-
     // Metrics
     overallScore: integer('overall_score').default(0),
     atsScore: integer('ats_score').default(0),
@@ -31,7 +27,9 @@ export const cvs = pgTable('cvs', {
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 
-    // smart profile generated
+
+    // Content Layers
+    content: text('content'),
     fullName: text('full_name'),
     yearsOfExperience: integer('years_of_experience').default(0),
     roleTag: text('role_tag'),
@@ -47,7 +45,6 @@ export const cvs = pgTable('cvs', {
 
 }, (table) => {
     return {
-        cvEmbeddingIdx: index('cv_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops')),
         profileIdx: index('profile_idx').on(table.profileId),
     };
 });
