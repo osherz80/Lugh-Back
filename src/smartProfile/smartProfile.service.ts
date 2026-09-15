@@ -4,7 +4,7 @@ import { DRIZZLE } from 'src/drizzle/drizzle.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../db/schema/index';
 import { eq } from 'drizzle-orm';
-import { CV, FullSmartProfile, OtherSmartProfile, SkillByCategory, SmartProfileRes, SmartProfileSection } from 'src/common/types/general';
+import { CV, CVEducations, CVExperiences, FullSmartProfile, OtherSmartProfile, SkillByCategory, SmartProfileRes, SmartProfileSection } from 'src/common/types/general';
 import { PROFILE_SECTIONS } from 'src/common/helpers/consts';
 import { askAiV2 } from 'src/common/helpers/ai';
 import * as spPrompts from 'src/common/prompts/smartProfile'
@@ -637,8 +637,8 @@ export class SmartProfileService {
                 yearsOfExperience: fullProfile.yearsOfExperience,
                 fullName: '',
                 isMaster: false,
-                education: fullProfile.education,
-                experiences: fullProfile.experiences,
+                education: fullProfile.education as CVEducations,
+                experiences: fullProfile.experiences as CVExperiences,
             }
             return { summary, expBullets, structuredSkills, fullProfile, cv };
         } catch (err: any) {

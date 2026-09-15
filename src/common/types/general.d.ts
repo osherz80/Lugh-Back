@@ -3,9 +3,14 @@ import * as schema from "../../db/schema";
 import { ANALYSIS_METRICS, PROFILE_SECTIONS } from "../helpers/consts";
 
 export type User = InferSelectModel<typeof schema.users>;
-export type CV = InferSelectModel<typeof schema.cvs>;
 export type Job = InferSelectModel<typeof schema.jobs>;
 export type Chunk = InferSelectModel<typeof schema.documentChunks>;
+export type CV = InferSelectModel<typeof schema.cvs>;
+
+export type CVExperiences = CV['experiences']
+export type CVEducations = CV['education']
+export type CVSkills = CV['skills']
+export type CVExtraEntries = CV['cvExtraEntries']
 
 export type FullUser = User & {
     smartProfiles?: SmartProfile[];

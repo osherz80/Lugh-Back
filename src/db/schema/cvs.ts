@@ -48,14 +48,14 @@ export const cvs = pgTable('cvs', {
     skills: jsonb('skills').$type<{
         category: string,
         skills: string[]
-    }>().default({ category: '', skills: [] }),
+    }[]>().notNull(),
 
     // Persona
     persona: jsonb('persona').$type<{
         style: string[];
         strengths: string[];
         story: string;
-    }>().default({ style: [], strengths: [], story: "" }),
+    }[]>(),
 
     education: jsonb('education').$type<{
         institution: string;
@@ -64,7 +64,7 @@ export const cvs = pgTable('cvs', {
         endDate: string;
         isOngoing: boolean;
         description: string;
-    }>().array(),
+    }[]>().notNull(),
 
     experiences: jsonb('experiences').$type<{
         company: string;
@@ -74,12 +74,12 @@ export const cvs = pgTable('cvs', {
         isCurrent: boolean;
         description: string;
         bullets: string[];
-    }>().array(),
+    }[]>().notNull(),
 
     cvExtraEntries: jsonb('cv_extra_entries').$type<{
         entryName: string;
         entryContent: string[];
-    }>().default({ entryName: '', entryContent: [] }),
+    }[]>(),
 
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
