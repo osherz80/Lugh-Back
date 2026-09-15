@@ -595,19 +595,19 @@ export class CVService {
         const { experiences, skills, education, cvExtraEntries, ...standAloneData } = this.getCvForEmbedding(cv);
         const allEmbeddingsPromises = [
             ...this.prepareStandAloneChunksPromises(standAloneData, cv.id),
-            // ...this.prepareEducationChunksPromises(education, cv.id),
-            // ...this.prepareSkillsChunksPromises(skills, cv.id),
-            // ...this.prepareExperiencesChunksPromises(experiences, cv.id),
-            // ...this.prepareExtraEntriesChunksPromises(cvExtraEntries, cv.id),
+            ...this.prepareEducationChunksPromises(education, cv.id),
+            ...this.prepareSkillsChunksPromises(skills, cv.id),
+            ...this.prepareExperiencesChunksPromises(experiences, cv.id),
+            ...this.prepareExtraEntriesChunksPromises(cvExtraEntries, cv.id),
         ]
         const standA = this.prepareStandAloneChunksPromises(standAloneData, cv.id)
         try {
             console.log("embedding chunks")
-            const embeddings = await Promise.all(standA.map(async (chunk) => await chunk()));
-            // embeddings.map((embedding) => {
-            //     console.log("embedding: " + embedding[0].embedding[0] + " - " + embedding[0].embedding.length)
-            // })
-            console.log("embeddings: ", embeddings)
+            const embeddings = await Promise.all(allEmbeddingsPromises.map(async (chunk) => await chunk()));
+            embeddings.map((embedding) => {
+                console.log("embedding: " + embedding.embedding[2] + " - " + embedding.embedding.length)
+            })
+            // console.log("embeddings: ", embeddings)
             return embeddings;
         } catch (err) {
             console.log("error embedding chunks")
