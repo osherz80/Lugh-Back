@@ -45,7 +45,10 @@ export const cvs = pgTable('cvs', {
     portfolio: text('portfolio'),
 
     // Skills
-    skills: jsonb('skills').$type<{ category: string, skills: string[] }>().array(),
+    skills: jsonb('skills').$type<{
+        category: string,
+        skills: string[]
+    }>().default({ category: '', skills: [] }),
 
     // Persona
     persona: jsonb('persona').$type<{

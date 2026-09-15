@@ -622,7 +622,7 @@ export class SmartProfileService {
                 candidateId: userId,
                 profileId: smartProfileId,
                 summary,
-                skills: structuredSkills,
+                skills: structuredSkills as any,
                 email: fullProfile.email,
                 phone: fullProfile.phone,
                 targetRole: fullProfile.targetRole,

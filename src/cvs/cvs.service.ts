@@ -543,7 +543,7 @@ export class CVService {
     }
 
     async cvFromSmartProfile(userId: string, smartProfileId: string) {
-        const { fullProfile, summary, structuredSkills, expBullets } = await this.smartProfileService.smartProfileToCv(userId, smartProfileId);
+        const { fullProfile, summary, structuredSkills, expBullets, cv } = await this.smartProfileService.smartProfileToCv(userId, smartProfileId);
         const fileName = fullProfile.targetRole + " - " + new Date().toISOString().split('T')[0];
         const embedding = await getEmbedding(`${summary}, ${structuredSkills}, ${expBullets}`)
 
@@ -551,7 +551,7 @@ export class CVService {
             candidateId: userId,
             profileId: smartProfileId,
             summary,
-            skills: structuredSkills,
+            skills: cv.skills,
             fileName,
             email: fullProfile.email,
             phone: fullProfile.phone,
