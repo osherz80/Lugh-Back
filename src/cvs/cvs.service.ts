@@ -4,7 +4,7 @@ import * as mammoth from "mammoth";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { eq } from "drizzle-orm";
 
-import { askAi, getEmbedding } from "src/common/helpers/ai";
+import { askAi, askAiV2, getEmbedding } from "src/common/helpers/ai";
 import { ANALYSIS_METRICS, CV_CHECK_PATTERNS, FILE_TYPES_MAP } from "src/common/helpers/consts";
 import { cleanText, getFileType } from "src/common/helpers/utils";
 import { calculateOverallScore, createOrderedPageRender, filterTips } from "./utils/utils";
@@ -92,6 +92,81 @@ export class CVService {
         } catch (error) {
             console.error('Failed to extract role tag: ', error);
             throw new Error('Failed to extract role tag: ' + error.message);
+        }
+    }
+
+    async extractInfoFromCV(cvContent: string, file?: Express.Multer.File) {
+        const CvExtractionGeminiSchema = {
+            type: 'OBJECT',
+            properties: {
+                fullName: { type: 'STRING' },
+                targetRole: { type: 'STRING' },
+                yearsOfExperience: { type: 'INTEGER' },
+                country: { type: 'STRING' },
+                city: { type: 'STRING' },
+                phone: { type: 'STRING' },
+                email: { type: 'STRING' },
+                linkedin: { type: 'STRING' },
+                github: { type: 'STRING' },
+                portfolio: { type: 'STRING' },
+                summary: { type: 'STRING' },
+                skills: {
+                    type: 'OBJECT',
+                    properties: {},
+                },
+                experiences: {
+                    type: 'ARRAY',
+                    items: {
+                        type: 'OBJECT',
+                        properties: {
+                            company: { type: 'STRING' },
+                            roleTag: { type: 'STRING' },
+                            startDate: { type: 'STRING' },
+                            endDate: { type: 'STRING' },
+                            isCurrent: { type: 'BOOLEAN' },
+                            description: { type: 'STRING' },
+                            bullets: { type: 'ARRAY', items: { type: 'STRING' } },
+                        },
+                        required: ['company', 'roleTag', 'startDate', 'isCurrent', 'description', 'bullets'],
+                    },
+                },
+                education: {
+                    type: 'ARRAY',
+                    items: {
+                        type: 'OBJECT',
+                        properties: {
+                            institution: { type: 'STRING' },
+                            degree: { type: 'STRING' },
+                            startDate: { type: 'STRING' },
+                            endDate: { type: 'STRING' },
+                            isOngoing: { type: 'BOOLEAN' },
+                            description: { type: 'STRING' },
+                        },
+                        required: ['institution', 'degree', 'startDate', 'isOngoing'],
+                    },
+                },
+            },
+            required: [
+                'fullName', 'targetRole', 'yearsOfExperience', 'country', 'city',
+                'phone', 'email', 'linkedin', 'github', 'portfolio', 'summary',
+                'skills', 'experiences', 'education',
+            ],
+        };
+        try {
+            const prompt = prompts.CV_INFO_EXTRACT_RESTRUCTURE_PROMPT
+            const data = `
+            here is the CV text:
+            ${cvContent}
+            `
+            const info = await askAiV2(prompt, data, 0.5, CvExtractionGeminiSchema);
+            if (!info) {
+                console.log("error getting CV info: ", info);
+                throw new Error("Could not extract CV info");
+            }
+            return info;
+        } catch (err) {
+            console.log("error extracting info from CV: ", err);
+            throw new Error("error extracting info from CV");
         }
     }
 
@@ -390,23 +465,27 @@ export class CVService {
     async uploadCv(file: Express.Multer.File, userId: string) {
         try {
             const cvCleanText = await this.parseCV(file);
-            const { roleTag } = await this.getRoleTag(cvCleanText);
-            const cvAnalysis = await this.getCVFullAnalysis(cvCleanText, roleTag, file);
+            console.log("CV clean text: \n\n", cvCleanText);
+            const extracted = await this.extractInfoFromCV(cvCleanText, file);
+            console.log("extracted: \n\n", extracted);
+            // const { roleTag } = await this.getRoleTag(cvCleanText);
+            // const cvAnalysis = await this.getCVFullAnalysis(cvCleanText, roleTag, file);
 
-            const [cv] = await this.db.insert(schema.cvs).values({
-                candidateId: userId,
-                content: cvCleanText,
-                fileName: file.originalname,
-                atsScore: cvAnalysis.ats.overallScore,
-                impactScore: cvAnalysis.impact.overallScore,
-                keywordsScore: cvAnalysis.keywords.overallScore,
-                layoutScore: cvAnalysis.layout.overallScore,
-                overallScore: cvAnalysis.score,
-                roleTag: roleTag,
-                tips: cvAnalysis.tips
-            }).returning().execute();
+            // const [cv] = await this.db.insert(schema.cvs).values({
+            //     candidateId: userId,
+            //     content: cvCleanText,
+            //     fileName: file.originalname,
+            //     atsScore: cvAnalysis.ats.overallScore,
+            //     impactScore: cvAnalysis.impact.overallScore,
+            //     keywordsScore: cvAnalysis.keywords.overallScore,
+            //     layoutScore: cvAnalysis.layout.overallScore,
+            //     overallScore: cvAnalysis.score,
+            //     roleTag: roleTag,
+            //     tips: cvAnalysis.tips
+            // }).returning().execute();
 
-            return cv;
+            // return cv;
+            throw new Error("error uploading cv");
         } catch (err) {
             console.log("error uploading cv", err);
             throw new Error("error uploading cv");
@@ -429,7 +508,6 @@ export class CVService {
             return await this.db.query.cvs.findMany({
                 where: (cvs) => eq(cvs.candidateId, userId),
                 columns: {
-                    embedding: false,
                     content: false,
                 },
                 with: {
@@ -454,7 +532,6 @@ export class CVService {
             const cvs = await this.db.query.cvs.findMany({
                 where: (cvs) => eq(cvs.profileId, smartProfileId),
                 columns: {
-                    embedding: false,
                     content: false,
                 }
             })
@@ -474,17 +551,16 @@ export class CVService {
             candidateId: userId,
             profileId: smartProfileId,
             summary,
-            structuredSkills,
+            skills: structuredSkills,
             fileName,
-            embedding,
             email: fullProfile.email,
             phone: fullProfile.phone,
-            roleTag: fullProfile.targetRole,
+            targetRole: fullProfile.targetRole,
             country: fullProfile.country,
             city: fullProfile.city,
             github: fullProfile.github,
             portfolio: fullProfile.portfolio,
-            linkedIn: fullProfile.linkedin,
+            linkedin: fullProfile.linkedin,
         }
 
         try {
@@ -495,5 +571,18 @@ export class CVService {
             console.log("error creating cv: ", err);
             throw new Error("error creating cv");
         }
+    }
+
+    async getCvForEmbedding(cv: CV) {
+        const toEmbed = {
+            skills: cv.skills,
+            summary: cv.summary,
+            city: cv.city,
+            country: cv.country,
+            targetRole: cv.targetRole,
+            yearsOfExperience: cv.yearsOfExperience,
+            cvExtraEntries: cv.cvExtraEntries,
+        }
+        return toEmbed;
     }
 }

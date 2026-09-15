@@ -4,7 +4,7 @@ import { DRIZZLE } from 'src/drizzle/drizzle.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../db/schema/index';
 import { eq } from 'drizzle-orm';
-import { FullSmartProfile, OtherSmartProfile, SkillByCategory, SmartProfileRes, SmartProfileSection } from 'src/common/types/general';
+import { CV, FullSmartProfile, OtherSmartProfile, SkillByCategory, SmartProfileRes, SmartProfileSection } from 'src/common/types/general';
 import { PROFILE_SECTIONS } from 'src/common/helpers/consts';
 import { askAiV2 } from 'src/common/helpers/ai';
 import * as spPrompts from 'src/common/prompts/smartProfile'
@@ -618,7 +618,29 @@ export class SmartProfileService {
             const expBullets = await this.createExpBullets(fullProfile);
             const allBullets = expBullets.reduce((acc: string[], exp) => acc.concat(exp.bullets), []);
             const structuredSkills = await this.createStructuredSkills(fullProfile, allBullets);
-            return { summary, expBullets, structuredSkills, fullProfile };
+            const cv: Partial<CV> = {
+                candidateId: userId,
+                profileId: smartProfileId,
+                summary,
+                skills: structuredSkills,
+                email: fullProfile.email,
+                phone: fullProfile.phone,
+                targetRole: fullProfile.targetRole,
+                country: fullProfile.country,
+                city: fullProfile.city,
+                github: fullProfile.github,
+                portfolio: fullProfile.portfolio,
+                linkedin: fullProfile.linkedin,
+                content: '',
+                cvExtraEntries: null,
+                persona: null,
+                yearsOfExperience: fullProfile.yearsOfExperience,
+                fullName: '',
+                isMaster: false,
+                education: fullProfile.education,
+                experiences: fullProfile.experiences,
+            }
+            return { summary, expBullets, structuredSkills, fullProfile, cv };
         } catch (err: any) {
             console.error('Error creating cv summary section:', err);
             throw new BadRequestException(err.message);
