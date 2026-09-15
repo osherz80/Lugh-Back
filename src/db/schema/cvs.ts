@@ -24,8 +24,6 @@ export const cvs = pgTable('cvs', {
     tips: jsonb('tips').$type<CVTip[]>().default([]),
     // tipsHistory: jsonb('tips_history').$type<CVTip[]>().default([]).notNull(),
 
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
 
 
     //** Content Layers **/
@@ -79,6 +77,9 @@ export const cvs = pgTable('cvs', {
         entryName: string;
         entryContent: string[];
     }>().default({ entryName: '', entryContent: [] }),
+
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
 
 }, (table) => {
     return {

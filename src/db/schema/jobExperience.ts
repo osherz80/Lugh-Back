@@ -7,8 +7,6 @@ export const jobExperiences = pgTable('job_experiences', {
     id: uuid('id').primaryKey().defaultRandom(),
     profileId: uuid('profile_id')
         .references(() => smartProfiles.profileId, { onDelete: 'cascade' }),
-    cvId: uuid('cv_id')
-        .references(() => cvs.id, { onDelete: 'cascade' }),
     company: varchar('company', { length: 255 }).notNull(),
     roleTag: varchar('role_tag', { length: 255 }).notNull(),
     startDate: varchar('start_date', { length: 50 }).notNull(),
@@ -24,10 +22,5 @@ export const jobExperiencesRelations = relations(jobExperiences, ({ one }) => ({
     profile: one(smartProfiles, {
         fields: [jobExperiences.profileId],
         references: [smartProfiles.profileId],
-    }),
-    cv: one(cvs, {
-        fields: [jobExperiences.cvId],
-        references: [cvs.id],
-        relationName: 'cv_experiences',
     }),
 }));
