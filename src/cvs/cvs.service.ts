@@ -111,8 +111,15 @@ export class CVService {
                 portfolio: { type: 'STRING' },
                 summary: { type: 'STRING' },
                 skills: {
-                    type: 'OBJECT',
-                    properties: {},
+                    type: 'ARRAY',
+                    items: {
+                        type: 'OBJECT',
+                        properties: {
+                            category: { type: 'STRING' },
+                            skills: { type: 'ARRAY', items: { type: 'STRING' } },
+                        },
+                        required: ['skills', 'category'],
+                    },
                 },
                 experiences: {
                     type: 'ARRAY',
