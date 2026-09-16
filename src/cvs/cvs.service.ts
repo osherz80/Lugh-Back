@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 
 import { askAi, askAiV2, getEmbedding } from "src/common/helpers/ai";
 import { ANALYSIS_METRICS, CV_CHECK_PATTERNS, FILE_TYPES_MAP } from "src/common/helpers/consts";
-import { cleanText, getFileType } from "src/common/helpers/utils";
+import { cleanText, defaultFileName, getFileType } from "src/common/helpers/utils";
 import { calculateOverallScore, createOrderedPageRender, filterTips } from "./utils/utils";
 import { DRIZZLE } from "src/drizzle/drizzle.module";
 import * as schema from '../db/schema/index';
@@ -507,13 +507,6 @@ export class CVService {
             console.log("getting cvs for user: ", userId);
             return await this.db.query.cvs.findMany({
                 where: (cvs) => eq(cvs.candidateId, userId),
-                columns: {
-                    content: false,
-                },
-                with: {
-                    education: true,
-                    experiences: true
-                }
             })
         } catch (err) {
             console.log("error getting cvs", err)
@@ -531,9 +524,6 @@ export class CVService {
             }
             const cvs = await this.db.query.cvs.findMany({
                 where: (cvs) => eq(cvs.profileId, smartProfileId),
-                columns: {
-                    content: false,
-                }
             })
             return cvs
         } catch (err) {
@@ -543,25 +533,27 @@ export class CVService {
     }
 
     async cvFromSmartProfile(userId: string, smartProfileId: string) {
-        const { fullProfile, summary, structuredSkills, expBullets, cv } = await this.smartProfileService.smartProfileToCv(userId, smartProfileId);
-        const fileName = fullProfile.targetRole + " - " + new Date().toISOString().split('T')[0];
+        const { fullProfile, cv } = await this.smartProfileService.smartProfileToCv(userId, smartProfileId);
+        const fileName = defaultFileName(cv.targetRole || '');
 
         const cvData: Partial<CV> = {
             candidateId: userId,
             profileId: smartProfileId,
-            summary,
+            summary: cv.summary,
             skills: cv.skills,
             fileName,
-            email: fullProfile.email,
-            phone: fullProfile.phone,
-            targetRole: fullProfile.targetRole,
-            country: fullProfile.country,
-            city: fullProfile.city,
-            github: fullProfile.github,
-            portfolio: fullProfile.portfolio,
-            linkedin: fullProfile.linkedin,
-            education: fullProfile.education as CVEducations,
-            experiences: fullProfile.experiences as CVExperiences
+            email: cv.email,
+            phone: cv.phone,
+            targetRole: cv.targetRole,
+            country: cv.country,
+            city: cv.city,
+            github: cv.github,
+            portfolio: cv.portfolio,
+            linkedin: cv.linkedin,
+            education: cv.education as CVEducations,
+            experiences: cv.experiences as CVExperiences,
+            yearsOfExperience: cv.yearsOfExperience,
+            fullName: cv.fullName
         }
 
         try {
@@ -576,23 +568,22 @@ export class CVService {
         }
     }
 
-    getCvForEmbedding(cv: CV) {
-        const toEmbed = {
+    prepareCvForEmbedding(cv: CV) {
+        return {
             city: cv.city,
             country: cv.country,
             targetRole: cv.targetRole,
-            yearsOfExperience: cv.yearsOfExperience,
+            yearsOfExperience: `${cv.targetRole} for ${cv.yearsOfExperience} years`,
             summary: cv.summary,
             experiences: cv.experiences,
             skills: cv.skills,
             education: cv.education,
             cvExtraEntries: cv.cvExtraEntries,
         }
-        return toEmbed;
     }
 
     async embedCvChunks(cv: CV) {
-        const { experiences, skills, education, cvExtraEntries, ...standAloneData } = this.getCvForEmbedding(cv);
+        const { experiences, skills, education, cvExtraEntries, ...standAloneData } = this.prepareCvForEmbedding(cv);
         const allEmbeddingsPromises = [
             ...this.prepareStandAloneChunksPromises(standAloneData, cv.id),
             ...this.prepareEducationChunksPromises(education, cv.id),
@@ -600,7 +591,6 @@ export class CVService {
             ...this.prepareExperiencesChunksPromises(experiences, cv.id),
             ...this.prepareExtraEntriesChunksPromises(cvExtraEntries, cv.id),
         ]
-        const standA = this.prepareStandAloneChunksPromises(standAloneData, cv.id)
         try {
             console.log("embedding chunks")
             const embeddings = await Promise.all(allEmbeddingsPromises.map(async (chunk) => await chunk()));

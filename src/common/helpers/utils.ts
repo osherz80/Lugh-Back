@@ -10,3 +10,5 @@ export const cleanText = (text: string): string => {
         .replace(/\n\s+\n/g, '\n\n')
         .trim();
 }
+
+export const defaultFileName = (fn: string) => `${fn} - ${new Date().toISOString().split('T')[0]}`;
