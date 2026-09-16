@@ -3,39 +3,20 @@ import { pgTable, uuid, text, vector, index, timestamp, boolean, integer, jsonb,
 import { CVTip } from 'src/cvs/types/cv';
 import { documentChunks, education, jobExperiences, smartProfiles, users } from './index';
 
-export const cvs = pgTable('cvs', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    candidateId: uuid('candidate_id')
-        .references(() => users.id),
-    profileId: uuid('profile_id')
-        .references(() => smartProfiles.profileId, { onDelete: 'cascade' }),
 
+export const cvContentColumns = {
     // File Management
     fileName: text('file_name').notNull(),
-    fileUrl: text('file_url'),
-    isMaster: boolean('is_master').default(false).notNull(),
 
-    // Metrics
-    overallScore: integer('overall_score').default(0),
-    atsScore: integer('ats_score').default(0),
-    keywordsScore: integer('keywords_score').default(0),
-    impactScore: integer('impact_score').default(0),
-    layoutScore: integer('layout_score').default(0),
-    tips: jsonb('tips').$type<CVTip[]>().default([]),
-    // tipsHistory: jsonb('tips_history').$type<CVTip[]>().default([]).notNull(),
-
-
-
-    //** Content Layers **/
-    content: text('content'),
-    summary: text('summary'),
+    // Content Layers
+    summary: text('summary').notNull(),
 
     // Basics
-    fullName: varchar('full_name', { length: 50 }),
-    targetRole: varchar('target_role', { length: 50 }),
-    yearsOfExperience: integer('years_of_experience').default(0),
-    country: varchar('country', { length: 25 }),
-    city: varchar('city', { length: 25 }),
+    fullName: varchar('full_name', { length: 50 }).notNull(),
+    targetRole: varchar('target_role', { length: 50 }).notNull(),
+    yearsOfExperience: integer('years_of_experience').notNull().default(0),
+    country: varchar('country', { length: 25 }).notNull(),
+    city: varchar('city', { length: 25 }).notNull(),
 
     // Contact
     phone: varchar('phone', { length: 20 }),
@@ -44,13 +25,12 @@ export const cvs = pgTable('cvs', {
     github: text('github'),
     portfolio: text('portfolio'),
 
-    // Skills
+    // Complex Types
     skills: jsonb('skills').$type<{
-        category: string,
-        skills: string[]
+        category: string;
+        skills: string[];
     }[]>().notNull(),
 
-    // Persona
     persona: jsonb('persona').$type<{
         style: string[];
         strengths: string[];
@@ -80,16 +60,38 @@ export const cvs = pgTable('cvs', {
         entryName: string;
         entryContent: string[];
     }[]>(),
+};
+
+export const cvMetricsColumns = {
+    overallScore: integer('overall_score').default(0),
+    atsScore: integer('ats_score').default(0),
+    keywordsScore: integer('keywords_score').default(0),
+    impactScore: integer('impact_score').default(0),
+    layoutScore: integer('layout_score').default(0),
+    tips: jsonb('tips').$type<CVTip[]>().default([]),
+}
+
+export const cvMetadataColumns = {
+    id: uuid('id').defaultRandom().primaryKey(),
+    candidateId: uuid('candidate_id').references(() => users.id),
+    profileId: uuid('profile_id').references(() => smartProfiles.profileId, { onDelete: 'cascade' }),
+
+    isMaster: boolean('is_master').default(false).notNull(),
 
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
+}
 
+
+export const cvs = pgTable('cvs', {
+    ...cvMetadataColumns,
+    ...cvContentColumns,
+    ...cvMetricsColumns,
 }, (table) => {
     return {
         profileIdx: index('profile_idx').on(table.profileId),
-    };
+    }
 });
-
 
 export const cvsProfileRelations = relations(cvs, ({ one, many }) => ({
     profile: one(smartProfiles, {
@@ -100,8 +102,5 @@ export const cvsProfileRelations = relations(cvs, ({ one, many }) => ({
         fields: [cvs.candidateId],
         references: [users.id],
     }),
-    experiences: many(jobExperiences, { relationName: 'cv_experiences' }),
-    education: many(education, { relationName: 'cv_education' }),
     chunks: many(documentChunks),
 }));
-
