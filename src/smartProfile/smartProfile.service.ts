@@ -524,6 +524,8 @@ export class SmartProfileService {
                         bulletsSchema
                     );
 
+                    console.log('ai bullets:', aiResult)
+
                     await this.db.update(schema.jobExperiences)
                         .set({
                             bullets: aiResult?.bullets || []
@@ -538,6 +540,7 @@ export class SmartProfileService {
                         startDate: exp.startDate,
                         endDate: exp.endDate,
                         isCurrent: exp.isCurrent,
+                        description: exp.description,
                         bullets: aiResult?.bullets || []
                     };
                 })
@@ -602,6 +605,7 @@ export class SmartProfileService {
             }
             const summary = await this.createCvSummarySection(fullProfile);
             const expBullets = await this.createExpBullets(fullProfile);
+            console.log('expBullets is', expBullets);
             const allBullets = expBullets.reduce((acc: string[], exp) => acc.concat(exp.bullets), []);
             const structuredSkills = await this.createStructuredSkills(fullProfile, allBullets);
             const cv: Omit<InsertModel, 'fileName'> = { //@TODO felling sketchy, rearrange
@@ -623,7 +627,7 @@ export class SmartProfileService {
                 fullName: fullProfile.fullName || '',
                 isMaster: false,
                 education: fullProfile.education as CVEducations,
-                experiences: fullProfile.experiences as CVExperiences,
+                experiences: expBullets as CVExperiences,
             }
             return { fullProfile, cv };
         } catch (err: any) {

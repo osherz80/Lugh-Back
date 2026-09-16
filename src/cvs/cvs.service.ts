@@ -561,6 +561,7 @@ export class CVService {
             console.log("cv created: ", cv);
             const chunks = await this.embedCvChunks(cv);
             const saveChunks = await this.db.insert(schema.documentChunks).values(chunks).execute();
+            console.log("cv + chunks created successfully")
             return cv;
         } catch (err) {
             console.log("error creating cv: ", err);
@@ -644,27 +645,27 @@ export class CVService {
                     }
                 }
             })
-            // const bulletsPromises = []
-            // const bulletsPromises = experiences?.flatMap((experience) => {
-            //     console.log("exp: ", experience.bullets);
-            //     console.log("bullets[0]: ", experience.bullets?.[0]);
-            //     console.log("bullets[2]: ", experience.bullets?.[2]);
-            //     return experience?.bullets?.map((bullet, index) => {
-            //         return async () => {
-            //             const embedding = await getEmbedding(`${experience.roleTag}: ${bullet}`)
-            //             return {
-            //                 cvId,
-            //                 embedding,
-            //                 chunkText: bullet,
-            //                 section: 'experiences',
-            //                 chunkIndex: index,
-            //                 sourceType: 'cv'
-            //             }
-            //         }
-            //     })
-            // })
-            return [...roleAndDescPromises]
-            // return [...roleAndDescPromises, ...bulletsPromises]
+            console.log("experiences", experiences)
+            const bulletsPromises = experiences?.flatMap((experience) => {
+                console.log("exp: ", experience.bullets);
+                console.log("bullets[0]: ", experience.bullets?.[0]);
+                console.log("bullets[2]: ", experience.bullets?.[2]);
+                return experience?.bullets?.map((bullet, index) => {
+                    return async () => {
+                        const embedding = await getEmbedding(`${experience.roleTag}: ${bullet}`)
+                        return {
+                            cvId,
+                            embedding,
+                            chunkText: bullet,
+                            section: 'experiences',
+                            chunkIndex: index,
+                            sourceType: 'cv'
+                        }
+                    }
+                })
+            })
+            // return [...roleAndDescPromises]
+            return [...roleAndDescPromises, ...bulletsPromises]
         } catch (err) {
             console.log("error preparing experiences chunks promises")
             throw err
@@ -697,21 +698,19 @@ export class CVService {
     prepareSkillsChunksPromises(skills: CVSkills, cvId: string) {
         try {
             console.log("preparing skills chunks promises")
-            return skills.flatMap((skillCategory, categoryIndex) => {
-                return skillCategory.skills.map((skill, index) => {
-                    return async () => {
-                        const embeddingData = `${skillCategory.category}: ${skill}`
-                        const embedding = await getEmbedding(embeddingData)
-                        return {
-                            cvId,
-                            embedding,
-                            chunkText: embeddingData,
-                            section: 'skills',
-                            chunkIndex: index,
-                            sourceType: 'cv'
-                        }
+            return skills.map((skillCategory, categoryIndex) => {
+                return async () => {
+                    const embeddingData = `${skillCategory.category}: ${skillCategory.skills.join(', ')}`
+                    const embedding = await getEmbedding(embeddingData)
+                    return {
+                        cvId,
+                        embedding,
+                        chunkText: embeddingData,
+                        section: 'skills - ' + skillCategory.category,
+                        chunkIndex: categoryIndex,
+                        sourceType: 'cv'
                     }
-                })
+                }
             })
         } catch (err) {
             console.log("error preparing skills chunks promises")
@@ -723,22 +722,19 @@ export class CVService {
         if (!extraEntries) return [];
         try {
             console.log("preparing extraEntries chunks promises")
-            return extraEntries.flatMap((extraEntry, index) => {
-                return extraEntry.entryContent.map((entryContent, index) => {
-
-                    return async () => {
-                        const embeddingData = `${extraEntry.entryName}: ${entryContent}`
-                        const embedding = await getEmbedding(embeddingData)
-                        return {
-                            cvId,
-                            embedding,
-                            chunkText: embeddingData,
-                            section: 'extraEntries',
-                            chunkIndex: index,
-                            sourceType: 'cv'
-                        }
+            return extraEntries.map((extraEntry, index) => {
+                return async () => {
+                    const embeddingData = `${extraEntry.entryName}: ${extraEntry.entryContent.join(', ')}`
+                    const embedding = await getEmbedding(embeddingData)
+                    return {
+                        cvId,
+                        embedding,
+                        chunkText: embeddingData,
+                        section: 'extraEntries - ' + extraEntry.entryName,
+                        chunkIndex: index,
+                        sourceType: 'cv'
                     }
-                })
+                }
             })
         } catch (err) {
             console.log("error preparing extraEntries chunks promises")

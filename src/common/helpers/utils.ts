@@ -11,4 +11,4 @@ export const cleanText = (text: string): string => {
         .trim();
 }
 
-export const defaultFileName = (fn: string) => `${fn} - ${new Date().toISOString().split('T')[0]}`;
+export const defaultFileName = (fn: string) => `${fn}-${new Date().toISOString().split('T')[0]}`;
