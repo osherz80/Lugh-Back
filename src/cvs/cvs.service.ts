@@ -13,7 +13,7 @@ import * as schema from '../db/schema/index';
 import { CVFullAnalysis, CVMetricAnalysis, CVDeterministicAnalysis, RoleTag, CVSmartAnalysis, CVTip } from "./types/cv";
 import * as prompts from "src/common/prompts/cvAnalizer";
 import { SmartProfileService } from "../smartProfile/smartProfile.service";
-import { CV, CVEducations, CVExperiences, CVExtraEntries, CVSkills } from "src/common/types/general";
+import { CV, CVEducations, CVExperiences, CVExtraEntries, CVSkills, InsertModel } from "src/common/types/general";
 
 
 interface ExtendedLoadParameters extends LoadParameters {
@@ -158,7 +158,7 @@ export class CVService {
             here is the CV text:
             ${cvContent}
             `
-            const info = await askAiV2(prompt, data, 0.5, CvExtractionGeminiSchema);
+            const info = await askAiV2<Omit<InsertModel, 'fileName'>>(prompt, data, 0.5, CvExtractionGeminiSchema);
             if (!info) {
                 console.log("error getting CV info: ", info);
                 throw new Error("Could not extract CV info");
@@ -468,24 +468,26 @@ export class CVService {
             console.log("CV clean text: \n\n", cvCleanText);
             const extracted = await this.extractInfoFromCV(cvCleanText, file);
             console.log("extracted: \n\n", extracted);
-            // const { roleTag } = await this.getRoleTag(cvCleanText);
-            // const cvAnalysis = await this.getCVFullAnalysis(cvCleanText, roleTag, file);
+            const { roleTag } = await this.getRoleTag(cvCleanText);
+            const cvAnalysis = await this.getCVFullAnalysis(cvCleanText, roleTag, file);
 
-            // const [cv] = await this.db.insert(schema.cvs).values({
-            //     candidateId: userId,
-            //     content: cvCleanText,
-            //     fileName: file.originalname,
-            //     atsScore: cvAnalysis.ats.overallScore,
-            //     impactScore: cvAnalysis.impact.overallScore,
-            //     keywordsScore: cvAnalysis.keywords.overallScore,
-            //     layoutScore: cvAnalysis.layout.overallScore,
-            //     overallScore: cvAnalysis.score,
-            //     roleTag: roleTag,
-            //     tips: cvAnalysis.tips
-            // }).returning().execute();
+            const [cv] = await this.db.insert(schema.cvs).values({
+                candidateId: userId,
+                fileName: file.originalname,
+                atsScore: cvAnalysis.ats.overallScore,
+                impactScore: cvAnalysis.impact.overallScore,
+                keywordsScore: cvAnalysis.keywords.overallScore,
+                layoutScore: cvAnalysis.layout.overallScore,
+                overallScore: cvAnalysis.score,
+                tips: cvAnalysis.tips,
+                ...extracted
+            }).returning().execute();
 
-            // return cv;
-            throw new Error("error uploading cv");
+            const embeddings = await this.embedCvChunks(cv)
+            await this.db.insert(schema.documentChunks).values(embeddings)
+            console.log("cv chunked N uploaded successfully");
+
+            return cv;
         } catch (err) {
             console.log("error uploading cv", err);
             throw new Error("error uploading cv");
