@@ -4,13 +4,11 @@ import { jobs } from './jobs';
 import { cvs } from './cvs';
 
 export const CHUNK_SOURCE_TYPES = ['job', 'cv'] as const;
-// export type ChunkSourceType = (typeof CHUNK_SOURCE_TYPES)[number];
-export type ChunkSourceType = string
+export type ChunkSourceType = (typeof CHUNK_SOURCE_TYPES)[number];
 
 export const documentChunks = pgTable('document_chunks', {
     id: uuid('id').defaultRandom().primaryKey(),
-    sourceType: text('source_type').notNull(),
-    // sourceType: text('source_type', { enum: CHUNK_SOURCE_TYPES }).notNull(),
+    sourceType: text('source_type', { enum: CHUNK_SOURCE_TYPES }).notNull(),
 
     jobId: uuid('job_id').references(() => jobs.id, { onDelete: 'cascade' }),
     cvId: uuid('cv_id').references(() => cvs.id, { onDelete: 'cascade' }),

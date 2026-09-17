@@ -13,7 +13,8 @@ import * as schema from '../db/schema/index';
 import { CVFullAnalysis, CVMetricAnalysis, CVDeterministicAnalysis, RoleTag, CVSmartAnalysis, CVTip } from "./types/cv";
 import * as prompts from "src/common/prompts/cvAnalizer";
 import { SmartProfileService } from "../smartProfile/smartProfile.service";
-import { CV, CVEducations, CVExperiences, CVExtraEntries, CVSkills, InsertModel } from "src/common/types/general";
+import { CV, CVEducations, CVExperiences, CVExtraEntries, CVSkills, DocumentChunk, InsertModel } from "src/common/types/general";
+import { CHUNK_SOURCE_TYPES } from "../db/schema/index";
 
 
 interface ExtendedLoadParameters extends LoadParameters {
@@ -134,7 +135,7 @@ export class CVService {
                             description: { type: 'STRING' },
                             bullets: { type: 'ARRAY', items: { type: 'STRING' } },
                         },
-                        required: ['company', 'roleTag', 'startDate', 'isCurrent', 'description', 'bullets'],
+                        required: ['company', 'roleTag', 'startDate', 'endDate', 'isCurrent', 'description', 'bullets'],
                     },
                 },
                 education: {
@@ -149,7 +150,7 @@ export class CVService {
                             isOngoing: { type: 'BOOLEAN' },
                             description: { type: 'STRING' },
                         },
-                        required: ['institution', 'degree', 'startDate', 'isOngoing'],
+                        required: ['institution', 'degree', 'startDate', 'endDate', 'isOngoing'],
                     },
                 },
             },
@@ -592,7 +593,7 @@ export class CVService {
         }
     }
 
-    async embedCvChunks(cv: CV) {
+    async embedCvChunks(cv: CV): Promise<DocumentChunk[]> {
         const { experiences, skills, education, cvExtraEntries, ...standAloneData } = this.prepareCvForEmbedding(cv);
         const allEmbeddingsPromises = [
             ...this.prepareStandAloneChunksPromises(standAloneData, cv.id),
@@ -604,10 +605,8 @@ export class CVService {
         try {
             console.log("embedding chunks")
             const embeddings = await Promise.all(allEmbeddingsPromises.map(async (chunk) => await chunk()));
-            embeddings.map((embedding) => {
-                console.log("embedding: " + embedding.embedding[2] + " - " + embedding.embedding.length)
-            })
-            // console.log("embeddings: ", embeddings)
+
+            console.log("embeded successfully", embeddings.length)
             return embeddings;
         } catch (err) {
             console.log("error embedding chunks")
@@ -622,7 +621,7 @@ export class CVService {
             return Object.keys(standAloneData).map((key) => {
                 return async () => {
                     const embedding = await getEmbedding(`${standAloneData[key]}`);
-                    return {
+                    const chunk: DocumentChunk = {
                         cvId,
                         embedding,
                         chunkText: standAloneData[key],
@@ -630,6 +629,7 @@ export class CVService {
                         chunkIndex: 0,
                         sourceType: 'cv'
                     };
+                    return chunk;
                 };
             });
         } catch (err) {
@@ -644,7 +644,7 @@ export class CVService {
             const roleAndDescPromises = experiences.map((experience, index) => {
                 return async () => {
                     const embedding = await getEmbedding(`${experience.roleTag}: ${experience.description}`)
-                    return {
+                    const chunk: DocumentChunk = {
                         cvId,
                         embedding,
                         chunkText: `${experience.roleTag}: ${experience.description}`,
@@ -652,17 +652,15 @@ export class CVService {
                         chunkIndex: index,
                         sourceType: 'cv'
                     }
+                    return chunk;
                 }
             })
             console.log("experiences", experiences)
             const bulletsPromises = experiences?.flatMap((experience) => {
-                console.log("exp: ", experience.bullets);
-                console.log("bullets[0]: ", experience.bullets?.[0]);
-                console.log("bullets[2]: ", experience.bullets?.[2]);
                 return experience?.bullets?.map((bullet, index) => {
                     return async () => {
                         const embedding = await getEmbedding(`${experience.roleTag}: ${bullet}`)
-                        return {
+                        const chunk: DocumentChunk = {
                             cvId,
                             embedding,
                             chunkText: bullet,
@@ -670,10 +668,10 @@ export class CVService {
                             chunkIndex: index,
                             sourceType: 'cv'
                         }
+                        return chunk;
                     }
                 })
             })
-            // return [...roleAndDescPromises]
             return [...roleAndDescPromises, ...bulletsPromises]
         } catch (err) {
             console.log("error preparing experiences chunks promises")
@@ -688,7 +686,7 @@ export class CVService {
                 return async () => {
                     const embeddingData = `${education.institution} - ${education.degree}: ${education.description}`
                     const embedding = await getEmbedding(embeddingData)
-                    return {
+                    const chunk: DocumentChunk = {
                         cvId,
                         embedding,
                         chunkText: embeddingData,
@@ -696,6 +694,7 @@ export class CVService {
                         chunkIndex: index,
                         sourceType: 'cv'
                     }
+                    return chunk;
                 }
             })
         } catch (err) {
@@ -711,7 +710,7 @@ export class CVService {
                 return async () => {
                     const embeddingData = `${skillCategory.category}: ${skillCategory.skills.join(', ')}`
                     const embedding = await getEmbedding(embeddingData)
-                    return {
+                    const chunk: DocumentChunk = {
                         cvId,
                         embedding,
                         chunkText: embeddingData,
@@ -719,6 +718,7 @@ export class CVService {
                         chunkIndex: categoryIndex,
                         sourceType: 'cv'
                     }
+                    return chunk;
                 }
             })
         } catch (err) {
@@ -735,7 +735,7 @@ export class CVService {
                 return async () => {
                     const embeddingData = `${extraEntry.entryName}: ${extraEntry.entryContent.join(', ')}`
                     const embedding = await getEmbedding(embeddingData)
-                    return {
+                    const chunk: DocumentChunk = {
                         cvId,
                         embedding,
                         chunkText: embeddingData,
@@ -743,6 +743,7 @@ export class CVService {
                         chunkIndex: index,
                         sourceType: 'cv'
                     }
+                    return chunk;
                 }
             })
         } catch (err) {

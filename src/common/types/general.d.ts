@@ -7,6 +7,7 @@ export type User = InferSelectModel<typeof schema.users>;
 export type Job = InferSelectModel<typeof schema.jobs>;
 export type Chunk = InferSelectModel<typeof schema.documentChunks>;
 export type CV = InferSelectModel<typeof schema.cvs>;
+export type DocumentChunk = InferInsertModel<typeof schema.documentChunks>;
 export type InsertModel = InferInsertModel<typeof schema.cvs>;
 type SelectModel = InferSelectModel<typeof schema.cvs>;
 

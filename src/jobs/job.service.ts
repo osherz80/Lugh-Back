@@ -118,7 +118,7 @@ export class JobsService {
       return await Promise.all(
         Object.keys(clearJob).map(async (key) => {
           // console.log(`chunk key: ${key}\n chunk content: ${clearJob[key]}`)
-          if (!clearJob[key]) return null;
+          if (!clearJob[key]) return;
           const embedding = await getEmbedding(clearJob[key])
           return {
             jobId: job.id,
