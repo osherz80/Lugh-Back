@@ -13,8 +13,8 @@ export class JobsController {
     return result;
   }
   @Post('/search')
-  async searchJobs(@Body() body: { jobSearch: string }) {
-    const result = await this.jobsService.searchJobs(body.jobSearch);
+  async searchJobs(@Body() body: { resource: "job" | "cv", query: string }) {
+    const result = await this.jobsService.searchJobs(body.resource, body.query);
     return result;
   }
 }

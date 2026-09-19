@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { desc, sql } from 'drizzle-orm';
+import { desc, eq, sql, and } from 'drizzle-orm';
 import { askAiV2, getEmbedding } from 'src/common/helpers/ai';
 import { db } from 'src/db';
 import { documentChunks, jobs } from 'src/db/schema';
@@ -83,26 +83,37 @@ export class JobsService {
     }
   }
 
-  async searchJobs(jobSearch: string) {
-    if (!jobSearch) {
+  async searchJobs(resource: "job" | "cv", query: string) {
+    if (!query) {
       throw new Error('Search job is required');
     }
     try {
-      let embeddedQuery = await getEmbedding(jobSearch);
+      const hydePrpt = `you are a job to candidate matcher, your role is to help our candidates with their job search.
+      our candidate dont know how to search correctly in our app and use vague search terms,
+      your job is to take their query and generate a hypotethical answer that will match 
+      what job they tried to find.`
 
-      const similarity = sql<number>`1 - (${jobs.embedding} <=> ${JSON.stringify(embeddedQuery)})`;
+      const hyde = await askAiV2<string>(hydePrpt, `here is the user query: ${query}`, 0.3)
+      console.log(hyde)
+      let embeddedQuery = await getEmbedding(`${hyde}`);
+
+      const similarity = sql<number>`1 - (${documentChunks.embedding} <=> ${JSON.stringify(embeddedQuery)})`;
 
       const results = await db
         .select({
-          id: jobs.id,
+          jobId: jobs.id,
           title: jobs.title,
           description: jobs.description,
           score: similarity,
         })
-        .from(jobs)
-        .where(sql`${similarity} > 0.1`)
+        .from(documentChunks).leftJoin(jobs, eq(documentChunks.jobId, jobs.id))
+        .where(
+          and(
+            sql`${similarity} > 0.1`,
+            eq(documentChunks.sourceType, 'job')
+          ))
         .orderBy(t => desc(t.score))
-        .limit(10);
+        .limit(100);
 
       return results;
     } catch (err) {
