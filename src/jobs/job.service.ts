@@ -85,40 +85,61 @@ export class JobsService {
 
   async searchJobs(resource: "job" | "cv", query: string) {
     if (!query) {
-      throw new Error('Search job is required');
+      throw new Error('Search query is required');
     }
+
     try {
       const hydePrpt = `you are a job to candidate matcher, your role is to help our candidates with their job search.
-      our candidate dont know how to search correctly in our app and use vague search terms,
-      your job is to take their query and generate a hypotethical answer that will match 
-      what job they tried to find.`
+    our candidate dont know how to search correctly in our app and use vague search terms,
+    your job is to take their query and generate a hypotethical answer that will match 
+    what job they tried to find.`;
 
-      const hyde = await askAiV2<string>(hydePrpt, `here is the user query: ${query}`, 0.3)
-      console.log(hyde)
-      let embeddedQuery = await getEmbedding(`${hyde}`);
+      const hyde = await askAiV2<string>(hydePrpt, `here is the user query: ${query}`, 0.3);
+      console.log('hyde: ', hyde)
+      const embeddedQuery = await getEmbedding(`${hyde}`);
 
       const similarity = sql<number>`1 - (${documentChunks.embedding} <=> ${JSON.stringify(embeddedQuery)})`;
 
+      const rankedChunks = db.$with('ranked_chunks').as(
+        db
+          .select({
+            jobId: documentChunks.jobId,
+            chunkScore: similarity.as('chunk_score'),
+            rank: sql<number>`ROW_NUMBER() OVER (
+            PARTITION BY ${documentChunks.jobId} 
+            ORDER BY 1 - (${documentChunks.embedding} <=> ${JSON.stringify(embeddedQuery)}) DESC
+          )`.as('rank'),
+          })
+          .from(documentChunks)
+          .where(
+            and(
+              eq(documentChunks.sourceType, resource),
+              sql`${similarity} > 0.1`
+            )
+          )
+      );
+
       const results = await db
+        .with(rankedChunks)
         .select({
-          jobId: jobs.id,
-          title: jobs.title,
-          description: jobs.description,
-          score: similarity,
+          jobId: rankedChunks.jobId,
+          score: sql<number>`AVG(${rankedChunks.chunkScore})`.as('score'),
         })
-        .from(documentChunks).leftJoin(jobs, eq(documentChunks.jobId, jobs.id))
-        .where(
-          and(
-            sql`${similarity} > 0.1`,
-            eq(documentChunks.sourceType, 'job')
-          ))
-        .orderBy(t => desc(t.score))
+        .from(rankedChunks)
+        .where(sql`${rankedChunks.rank} <= 3`)
+        .groupBy(rankedChunks.jobId)
+        .orderBy(desc(sql`AVG(${rankedChunks.chunkScore})`))
         .limit(100);
 
-      return results;
+      const jobsFound = await db.query.jobs.findMany({
+        where: eq(jobs.id, results.map((result) => result.jobId)),
+
+      });
+      console.log('jobs found: ', jobsFound)
+
     } catch (err) {
-      console.log(err);
-      return err
+      console.error('Error during job search:', err);
+      throw err;
     }
   }
 
