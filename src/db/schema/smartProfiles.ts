@@ -11,7 +11,7 @@ export const smartProfiles = pgTable('smart_profiles', {
     // Basics
     fullName: varchar('full_name', { length: 50 }),
     targetRole: varchar('target_role', { length: 50 }),
-    yearsOfExperience: integer('years_of_experience').default(0),
+    yearsOfExperience: integer('years_of_experience').notNull().default(0),
     country: varchar('country', { length: 25 }),
     city: varchar('city', { length: 25 }),
 

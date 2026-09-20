@@ -7,13 +7,14 @@ export class JobsController {
   constructor(private readonly jobsService: JobsService) { }
   @Post('/create')
   async createJob(@Body() body: any) {
-    const create = body.method === "manual" ? this.jobsService.createJob : this.jobsService.autoCreateJob;
-    const result = await create(body[body.method]);
+    const result = body.method === "manual"
+      ? await this.jobsService.createJob(body[body.method])
+      : await this.jobsService.autoCreateJob(body[body.method]);
     return result;
   }
   @Post('/search')
-  async searchJobs(@Body() body: { jobSearch: string }) {
-    const result = await this.jobsService.searchJobs(body.jobSearch);
+  async searchJobs(@Body() body: { resource: "job" | "cv", query: string }) {
+    const result = await this.jobsService.searchJobs(body.resource, body.query);
     return result;
   }
 }

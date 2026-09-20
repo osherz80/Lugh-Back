@@ -20,6 +20,17 @@ Final Output (JSON) example: {
     "confidence": 0.99,
     }`
 
+
+export const CV_INFO_EXTRACT_RESTRUCTURE_PROMPT = `your role is to take a candidate cv as a long text and extract and restructure the pure text 
+as a structured cv by sectiones like headers and their content,
+lists for bullets sections like "skills" etc' and strings for text chunks like "summary".
+an average cv usualy have a "proffesional summary" of sorts, this will be the content of the "summary" field. 
+a cv may not list what role the candidate looking to fill/is currently having, in that case try to infer it from the cv content.
+if you cant infer it leave the field empty.
+structure only the text in the input cv, beside target role do not add/infer/suggest anything just restructure.
+if there is some missing information you can leave the field as empty string or empty array.
+`
+
 export const CV_SMART_ATS_SCORE_PROMPT = `Role: You are a professional ATS (Applicant Tracking System) Auditor.
     
 Task: Analyze the provided resume text for the role of: [TARGET_ROLE].

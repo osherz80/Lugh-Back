@@ -4,16 +4,17 @@ import * as mammoth from "mammoth";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { eq } from "drizzle-orm";
 
-import { askAi, getEmbedding } from "src/common/helpers/ai";
+import { askAi, askAiV2, getEmbedding } from "src/common/helpers/ai";
 import { ANALYSIS_METRICS, CV_CHECK_PATTERNS, FILE_TYPES_MAP } from "src/common/helpers/consts";
-import { cleanText, getFileType } from "src/common/helpers/utils";
+import { cleanText, defaultFileName, getFileType } from "src/common/helpers/utils";
 import { calculateOverallScore, createOrderedPageRender, filterTips } from "./utils/utils";
 import { DRIZZLE } from "src/drizzle/drizzle.module";
 import * as schema from '../db/schema/index';
 import { CVFullAnalysis, CVMetricAnalysis, CVDeterministicAnalysis, RoleTag, CVSmartAnalysis, CVTip } from "./types/cv";
 import * as prompts from "src/common/prompts/cvAnalizer";
 import { SmartProfileService } from "../smartProfile/smartProfile.service";
-import { CV } from "src/common/types/general";
+import { CV, CVEducations, CVExperiences, CVExtraEntries, CVSkills, DocumentChunk, InsertModel } from "src/common/types/general";
+import { CHUNK_SOURCE_TYPES } from "../db/schema/index";
 
 
 interface ExtendedLoadParameters extends LoadParameters {
@@ -92,6 +93,88 @@ export class CVService {
         } catch (error) {
             console.error('Failed to extract role tag: ', error);
             throw new Error('Failed to extract role tag: ' + error.message);
+        }
+    }
+
+    async extractInfoFromCV(cvContent: string, file?: Express.Multer.File) {
+        const CvExtractionGeminiSchema = {
+            type: 'OBJECT',
+            properties: {
+                fullName: { type: 'STRING' },
+                targetRole: { type: 'STRING' },
+                yearsOfExperience: { type: 'INTEGER' },
+                country: { type: 'STRING' },
+                city: { type: 'STRING' },
+                phone: { type: 'STRING' },
+                email: { type: 'STRING' },
+                linkedin: { type: 'STRING' },
+                github: { type: 'STRING' },
+                portfolio: { type: 'STRING' },
+                summary: { type: 'STRING' },
+                skills: {
+                    type: 'ARRAY',
+                    items: {
+                        type: 'OBJECT',
+                        properties: {
+                            category: { type: 'STRING' },
+                            skills: { type: 'ARRAY', items: { type: 'STRING' } },
+                        },
+                        required: ['skills', 'category'],
+                    },
+                },
+                experiences: {
+                    type: 'ARRAY',
+                    items: {
+                        type: 'OBJECT',
+                        properties: {
+                            company: { type: 'STRING' },
+                            roleTag: { type: 'STRING' },
+                            startDate: { type: 'STRING' },
+                            endDate: { type: 'STRING' },
+                            isCurrent: { type: 'BOOLEAN' },
+                            description: { type: 'STRING' },
+                            bullets: { type: 'ARRAY', items: { type: 'STRING' } },
+                        },
+                        required: ['company', 'roleTag', 'startDate', 'endDate', 'isCurrent', 'description', 'bullets'],
+                    },
+                },
+                education: {
+                    type: 'ARRAY',
+                    items: {
+                        type: 'OBJECT',
+                        properties: {
+                            institution: { type: 'STRING' },
+                            degree: { type: 'STRING' },
+                            startDate: { type: 'STRING' },
+                            endDate: { type: 'STRING' },
+                            isOngoing: { type: 'BOOLEAN' },
+                            description: { type: 'STRING' },
+                        },
+                        required: ['institution', 'degree', 'startDate', 'endDate', 'isOngoing'],
+                    },
+                },
+            },
+            required: [
+                'fullName', 'targetRole', 'yearsOfExperience', 'country', 'city',
+                'phone', 'email', 'linkedin', 'github', 'portfolio', 'summary',
+                'skills', 'experiences', 'education',
+            ],
+        };
+        try {
+            const prompt = prompts.CV_INFO_EXTRACT_RESTRUCTURE_PROMPT
+            const data = `
+            here is the CV text:
+            ${cvContent}
+            `
+            const info = await askAiV2<Omit<InsertModel, 'fileName'>>(prompt, data, 0.5, CvExtractionGeminiSchema);
+            if (!info) {
+                console.log("error getting CV info: ", info);
+                throw new Error("Could not extract CV info");
+            }
+            return info;
+        } catch (err) {
+            console.log("error extracting info from CV: ", err);
+            throw new Error("error extracting info from CV");
         }
     }
 
@@ -390,21 +473,27 @@ export class CVService {
     async uploadCv(file: Express.Multer.File, userId: string) {
         try {
             const cvCleanText = await this.parseCV(file);
+            console.log("CV clean text: \n\n", cvCleanText);
+            const extracted = await this.extractInfoFromCV(cvCleanText, file);
+            console.log("extracted: \n\n", extracted);
             const { roleTag } = await this.getRoleTag(cvCleanText);
             const cvAnalysis = await this.getCVFullAnalysis(cvCleanText, roleTag, file);
 
             const [cv] = await this.db.insert(schema.cvs).values({
                 candidateId: userId,
-                content: cvCleanText,
                 fileName: file.originalname,
                 atsScore: cvAnalysis.ats.overallScore,
                 impactScore: cvAnalysis.impact.overallScore,
                 keywordsScore: cvAnalysis.keywords.overallScore,
                 layoutScore: cvAnalysis.layout.overallScore,
                 overallScore: cvAnalysis.score,
-                roleTag: roleTag,
-                tips: cvAnalysis.tips
+                tips: cvAnalysis.tips,
+                ...extracted
             }).returning().execute();
+
+            const embeddings = await this.embedCvChunks(cv)
+            await this.db.insert(schema.documentChunks).values(embeddings)
+            console.log("cv chunked N uploaded successfully");
 
             return cv;
         } catch (err) {
@@ -428,14 +517,6 @@ export class CVService {
             console.log("getting cvs for user: ", userId);
             return await this.db.query.cvs.findMany({
                 where: (cvs) => eq(cvs.candidateId, userId),
-                columns: {
-                    embedding: false,
-                    content: false,
-                },
-                with: {
-                    education: true,
-                    experiences: true
-                }
             })
         } catch (err) {
             console.log("error getting cvs", err)
@@ -453,10 +534,6 @@ export class CVService {
             }
             const cvs = await this.db.query.cvs.findMany({
                 where: (cvs) => eq(cvs.profileId, smartProfileId),
-                columns: {
-                    embedding: false,
-                    content: false,
-                }
             })
             return cvs
         } catch (err) {
@@ -466,34 +543,212 @@ export class CVService {
     }
 
     async cvFromSmartProfile(userId: string, smartProfileId: string) {
-        const { fullProfile, summary, structuredSkills, expBullets } = await this.smartProfileService.smartProfileToCv(userId, smartProfileId);
-        const fileName = fullProfile.targetRole + " - " + new Date().toISOString().split('T')[0];
-        const embedding = await getEmbedding(`${summary}, ${structuredSkills}, ${expBullets}`)
+        const { fullProfile, cv } = await this.smartProfileService.smartProfileToCv(userId, smartProfileId);
+        const fileName = defaultFileName(cv.targetRole || '');
 
         const cvData: Partial<CV> = {
             candidateId: userId,
             profileId: smartProfileId,
-            summary,
-            structuredSkills,
+            summary: cv.summary,
+            skills: cv.skills,
             fileName,
-            embedding,
-            email: fullProfile.email,
-            phone: fullProfile.phone,
-            roleTag: fullProfile.targetRole,
-            country: fullProfile.country,
-            city: fullProfile.city,
-            github: fullProfile.github,
-            portfolio: fullProfile.portfolio,
-            linkedIn: fullProfile.linkedin,
+            email: cv.email,
+            phone: cv.phone,
+            targetRole: cv.targetRole,
+            country: cv.country,
+            city: cv.city,
+            github: cv.github,
+            portfolio: cv.portfolio,
+            linkedin: cv.linkedin,
+            education: cv.education as CVEducations,
+            experiences: cv.experiences as CVExperiences,
+            yearsOfExperience: cv.yearsOfExperience,
+            fullName: cv.fullName
         }
 
         try {
             const [cv] = await this.db.insert(schema.cvs).values(cvData as CV).returning().execute();
             console.log("cv created: ", cv);
+            const chunks = await this.embedCvChunks(cv);
+            const saveChunks = await this.db.insert(schema.documentChunks).values(chunks).execute();
+            console.log("cv + chunks created successfully")
             return cv;
         } catch (err) {
             console.log("error creating cv: ", err);
             throw new Error("error creating cv");
+        }
+    }
+
+    prepareCvForEmbedding(cv: CV) {
+        return {
+            city: cv.city,
+            country: cv.country,
+            targetRole: cv.targetRole,
+            yearsOfExperience: `${cv.targetRole} for ${cv.yearsOfExperience} years`,
+            summary: cv.summary,
+            experiences: cv.experiences,
+            skills: cv.skills,
+            education: cv.education,
+            cvExtraEntries: cv.cvExtraEntries,
+        }
+    }
+
+    async embedCvChunks(cv: CV): Promise<DocumentChunk[]> {
+        const { experiences, skills, education, cvExtraEntries, ...standAloneData } = this.prepareCvForEmbedding(cv);
+        const allEmbeddingsPromises = [
+            ...this.prepareStandAloneChunksPromises(standAloneData, cv.id),
+            ...this.prepareEducationChunksPromises(education, cv.id),
+            ...this.prepareSkillsChunksPromises(skills, cv.id),
+            ...this.prepareExperiencesChunksPromises(experiences, cv.id),
+            ...this.prepareExtraEntriesChunksPromises(cvExtraEntries, cv.id),
+        ]
+        try {
+            console.log("embedding chunks")
+            const embeddings = await Promise.all(allEmbeddingsPromises.map(async (chunk) => await chunk()));
+
+            console.log("embeded successfully", embeddings.length)
+            return embeddings;
+        } catch (err) {
+            console.log("error embedding chunks")
+            throw err;
+        }
+    }
+
+    prepareStandAloneChunksPromises(standAloneData: Record<string, any>, cvId: string) {
+        try {
+            console.log("preparing standAlone chunks promises");
+
+            return Object.keys(standAloneData).map((key) => {
+                return async () => {
+                    const embedding = await getEmbedding(`${standAloneData[key]}`);
+                    const chunk: DocumentChunk = {
+                        cvId,
+                        embedding,
+                        chunkText: standAloneData[key],
+                        section: key,
+                        chunkIndex: 0,
+                        sourceType: 'cv'
+                    };
+                    return chunk;
+                };
+            });
+        } catch (err) {
+            console.log("error preparing standAlone chunks");
+            throw err;
+        }
+    }
+
+    prepareExperiencesChunksPromises(experiences: CVExperiences, cvId: string) {
+        try {
+            console.log("preparing experiences chunks promises")
+            const roleAndDescPromises = experiences.map((experience, index) => {
+                return async () => {
+                    const embedding = await getEmbedding(`${experience.roleTag}: ${experience.description}`)
+                    const chunk: DocumentChunk = {
+                        cvId,
+                        embedding,
+                        chunkText: `${experience.roleTag}: ${experience.description}`,
+                        section: 'experiences',
+                        chunkIndex: index,
+                        sourceType: 'cv'
+                    }
+                    return chunk;
+                }
+            })
+            console.log("experiences", experiences)
+            const bulletsPromises = experiences?.flatMap((experience) => {
+                return experience?.bullets?.map((bullet, index) => {
+                    return async () => {
+                        const embedding = await getEmbedding(`${experience.roleTag}: ${bullet}`)
+                        const chunk: DocumentChunk = {
+                            cvId,
+                            embedding,
+                            chunkText: bullet,
+                            section: 'experiences',
+                            chunkIndex: index,
+                            sourceType: 'cv'
+                        }
+                        return chunk;
+                    }
+                })
+            })
+            return [...roleAndDescPromises, ...bulletsPromises]
+        } catch (err) {
+            console.log("error preparing experiences chunks promises")
+            throw err
+        }
+    }
+
+    prepareEducationChunksPromises(education: CVEducations, cvId: string) {
+        try {
+            console.log("preparing education chunks promises")
+            return education.map((education, index) => {
+                return async () => {
+                    const embeddingData = `${education.institution} - ${education.degree}: ${education.description}`
+                    const embedding = await getEmbedding(embeddingData)
+                    const chunk: DocumentChunk = {
+                        cvId,
+                        embedding,
+                        chunkText: embeddingData,
+                        section: 'education',
+                        chunkIndex: index,
+                        sourceType: 'cv'
+                    }
+                    return chunk;
+                }
+            })
+        } catch (err) {
+            console.log("error preparing education chunks promises")
+            throw err
+        }
+    }
+
+    prepareSkillsChunksPromises(skills: CVSkills, cvId: string) {
+        try {
+            console.log("preparing skills chunks promises")
+            return skills.map((skillCategory, categoryIndex) => {
+                return async () => {
+                    const embeddingData = `${skillCategory.category}: ${skillCategory.skills.join(', ')}`
+                    const embedding = await getEmbedding(embeddingData)
+                    const chunk: DocumentChunk = {
+                        cvId,
+                        embedding,
+                        chunkText: embeddingData,
+                        section: 'skills - ' + skillCategory.category,
+                        chunkIndex: categoryIndex,
+                        sourceType: 'cv'
+                    }
+                    return chunk;
+                }
+            })
+        } catch (err) {
+            console.log("error preparing skills chunks promises")
+            throw err
+        }
+    }
+
+    prepareExtraEntriesChunksPromises(extraEntries: CVExtraEntries, cvId: string) {
+        if (!extraEntries) return [];
+        try {
+            console.log("preparing extraEntries chunks promises")
+            return extraEntries.map((extraEntry, index) => {
+                return async () => {
+                    const embeddingData = `${extraEntry.entryName}: ${extraEntry.entryContent.join(', ')}`
+                    const embedding = await getEmbedding(embeddingData)
+                    const chunk: DocumentChunk = {
+                        cvId,
+                        embedding,
+                        chunkText: embeddingData,
+                        section: 'extraEntries - ' + extraEntry.entryName,
+                        chunkIndex: index,
+                        sourceType: 'cv'
+                    }
+                    return chunk;
+                }
+            })
+        } catch (err) {
+            console.log("error preparing extraEntries chunks promises")
+            throw err
         }
     }
 }

@@ -1,57 +1,97 @@
 import { relations } from 'drizzle-orm';
-import { pgTable, uuid, text, vector, index, timestamp, boolean, integer, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, vector, index, timestamp, boolean, integer, jsonb, varchar } from 'drizzle-orm/pg-core';
 import { CVTip } from 'src/cvs/types/cv';
-import { education, jobExperiences, smartProfiles, users } from './index';
+import { documentChunks, education, jobExperiences, smartProfiles, users } from './index';
 
-export const cvs = pgTable('cvs', {
-    id: uuid('id').defaultRandom().primaryKey(),
-    candidateId: uuid('candidate_id')
-        .references(() => users.id),
-    profileId: uuid('profile_id')
-        .references(() => smartProfiles.profileId, { onDelete: 'cascade' }),
 
+export const cvContentColumns = {
     // File Management
     fileName: text('file_name').notNull(),
-    fileUrl: text('file_url'),
-    isMaster: boolean('is_master').default(false).notNull(),
 
     // Content Layers
-    content: text('content'),
-    embedding: vector('embedding', { dimensions: 256 }),// TODO: add chunking(ColBERT)
+    summary: text('summary').notNull(),
 
-    // Metrics
+    // Basics
+    fullName: varchar('full_name', { length: 50 }).notNull(),
+    targetRole: varchar('target_role', { length: 50 }).notNull(),
+    yearsOfExperience: integer('years_of_experience').notNull().default(0),
+    country: varchar('country', { length: 25 }).notNull(),
+    city: varchar('city', { length: 25 }).notNull(),
+
+    // Contact
+    phone: varchar('phone', { length: 20 }),
+    email: varchar('email', { length: 100 }),
+    linkedin: text('linkedin'),
+    github: text('github'),
+    portfolio: text('portfolio'),
+
+    // Complex Types
+    skills: jsonb('skills').$type<{
+        category: string;
+        skills: string[];
+    }[]>().notNull(),
+
+    persona: jsonb('persona').$type<{
+        style: string[];
+        strengths: string[];
+        story: string;
+    }[]>(),
+
+    education: jsonb('education').$type<{
+        institution: string;
+        degree: string;
+        startDate: string;
+        endDate: string;
+        isOngoing: boolean;
+        description: string;
+    }[]>().notNull(),
+
+    experiences: jsonb('experiences').$type<{
+        company: string;
+        roleTag: string;
+        startDate: string;
+        endDate: string;
+        isCurrent: boolean;
+        description: string;
+        bullets: string[];
+    }[]>().notNull(),
+
+    cvExtraEntries: jsonb('cv_extra_entries').$type<{
+        entryName: string;
+        entryContent: string[];
+    }[]>(),
+};
+
+export const cvMetricsColumns = {
     overallScore: integer('overall_score').default(0),
     atsScore: integer('ats_score').default(0),
     keywordsScore: integer('keywords_score').default(0),
     impactScore: integer('impact_score').default(0),
     layoutScore: integer('layout_score').default(0),
     tips: jsonb('tips').$type<CVTip[]>().default([]),
-    // tipsHistory: jsonb('tips_history').$type<CVTip[]>().default([]).notNull(),
+}
+
+export const cvMetadataColumns = {
+    id: uuid('id').defaultRandom().primaryKey(),
+    candidateId: uuid('candidate_id').references(() => users.id),
+    profileId: uuid('profile_id').references(() => smartProfiles.profileId, { onDelete: 'cascade' }),
+
+    isMaster: boolean('is_master').default(false).notNull(),
 
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
+}
 
-    // smart profile generated
-    fullName: text('full_name'),
-    yearsOfExperience: integer('years_of_experience').default(0),
-    roleTag: text('role_tag'),
-    country: text('country'),
-    city: text('city'),
-    email: text('email'),
-    phone: text('phone'),
-    github: text('github'),
-    portfolio: text('portfolio'),
-    linkedIn: text('linkedin'),
-    summary: text('summary'),
-    structuredSkills: jsonb('structured_skills').$type<{ category: string, skills: string[] }>().array()
 
+export const cvs = pgTable('cvs', {
+    ...cvMetadataColumns,
+    ...cvContentColumns,
+    ...cvMetricsColumns,
 }, (table) => {
     return {
-        cvEmbeddingIdx: index('cv_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops')),
         profileIdx: index('profile_idx').on(table.profileId),
-    };
+    }
 });
-
 
 export const cvsProfileRelations = relations(cvs, ({ one, many }) => ({
     profile: one(smartProfiles, {
@@ -62,6 +102,5 @@ export const cvsProfileRelations = relations(cvs, ({ one, many }) => ({
         fields: [cvs.candidateId],
         references: [users.id],
     }),
-    experiences: many(jobExperiences, { relationName: 'cv_experiences' }),
-    education: many(education, { relationName: 'cv_education' }),
+    chunks: many(documentChunks),
 }));
