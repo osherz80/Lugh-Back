@@ -17,7 +17,7 @@ export const jobs = pgTable('jobs', {
     employmentType: text('employment_type'),
     experienceLevel: text('experience_level'),
     salaryRange: text('salary_range'),
-    embedding: vector('embedding', { dimensions: 256 }),
+    embedding: vector('embedding', { dimensions: 1024 }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (table) => {

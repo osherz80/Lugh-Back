@@ -14,7 +14,7 @@ export const documentChunks = pgTable('document_chunks', {
     cvId: uuid('cv_id').references(() => cvs.id, { onDelete: 'cascade' }),
 
     chunkText: text('chunk_text').notNull(),
-    embedding: vector('embedding', { dimensions: 256 }).notNull(),
+    embedding: vector('embedding', { dimensions: 1024 }).notNull(),
     section: text('section').notNull(),
     chunkIndex: integer('chunk_index').notNull(),
     createdAt: timestamp('created_at').defaultNow(),

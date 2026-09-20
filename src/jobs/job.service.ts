@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { desc, eq, sql, and } from 'drizzle-orm';
+import { desc, eq, sql, and, inArray } from 'drizzle-orm';
 import { askAiV2, getEmbedding } from 'src/common/helpers/ai';
 import { db } from 'src/db';
 import { documentChunks, jobs } from 'src/db/schema';
@@ -83,20 +83,48 @@ export class JobsService {
     }
   }
 
+  async rechunk() {
+    const chunks = await db.select().from(documentChunks);
+    for (const c of chunks) {
+      const embedding = await getEmbedding(c.chunkText);
+      await db.update(documentChunks).set({ embedding }).where(eq(documentChunks.id, c.id));
+    }
+    const allJobs = await db.select().from(jobs);
+    for (const j of allJobs) {
+      const embedding = await getEmbedding(j.description);
+      await db.update(jobs).set({ embedding }).where(eq(jobs.id, j.id));
+    }
+    console.log('re-embedded all chunks and jobs');
+  }
+
   async searchJobs(resource: "job" | "cv", query: string) {
     if (!query) {
       throw new Error('Search query is required');
+    }
+
+    // await this.rechunk()
+    // return;
+
+    const hydeScheme = {
+      type: 'OBJECT',
+      properties: {
+        jobDescription: { type: 'STRING' },
+        title: { type: 'STRING' }
+      },
+      required: ['jobDescription', 'title']
     }
 
     try {
       const hydePrpt = `you are a job to candidate matcher, your role is to help our candidates with their job search.
     our candidate dont know how to search correctly in our app and use vague search terms,
     your job is to take their query and generate a hypotethical answer that will match 
-    what job they tried to find.`;
+    what job they tried to find.
+    your answer should be only a short job description nothing more.`;
 
-      const hyde = await askAiV2<string>(hydePrpt, `here is the user query: ${query}`, 0.3);
+      const hyde = await askAiV2<{ jobDescription: string, title: string }>(hydePrpt, `here is the user query: ${query}`, 0.3, hydeScheme);
       console.log('hyde: ', hyde)
-      const embeddedQuery = await getEmbedding(`${hyde}`);
+      const embeddedQuery = await getEmbedding(`${hyde.jobDescription} ${hyde.title}`);
+      console.log('embeddedQuery len: ', embeddedQuery.length)
 
       const similarity = sql<number>`1 - (${documentChunks.embedding} <=> ${JSON.stringify(embeddedQuery)})`;
 
@@ -131,11 +159,27 @@ export class JobsService {
         .orderBy(desc(sql`AVG(${rankedChunks.chunkScore})`))
         .limit(100);
 
-      const jobsFound = await db.query.jobs.findMany({
-        where: eq(jobs.id, results.map((result) => result.jobId)),
+      const jobIds = results
+        .map((result) => result.jobId)
+        .filter((id): id is string => Boolean(id));
 
+      if (jobIds.length === 0) {
+        return [];
+      }
+
+      const jobsFound = await db.query.jobs.findMany({
+        where: inArray(jobs.id, jobIds),
       });
-      console.log('jobs found: ', jobsFound)
+
+      const scoreMap = new Map(results.map((result) => [result.jobId, result.score]));
+      const sortedJobs = jobsFound
+        .map((job) => ({
+          ...job,
+          score: scoreMap.get(job.id) ?? 0,
+        }))
+        .sort((a, b) => b.score - a.score);
+
+      return sortedJobs;
 
     } catch (err) {
       console.error('Error during job search:', err);

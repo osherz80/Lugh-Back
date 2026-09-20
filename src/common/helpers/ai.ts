@@ -80,18 +80,19 @@ export const askAiV2 = async <T>(
     }
 }
 
-export const getEmbedding = async (text: string): Promise<number[]> => {
-    let embedding
+export const getEmbedding = async (text: string, taskType = "RETRIEVAL_DOCUMENT"): Promise<number[]> => {
     if (process.env.USE_LOCAL_MODEL === "true") {
-        embedding = await getLocalEmbedding(text)
-        embedding = embedding.slice(0, 256);
-        return embedding
+        return await getLocalEmbedding(text)
     }
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const response = await ai.models.embedContent({
             model: "gemini-embedding-001",
             contents: text,
+            config: {
+                outputDimensionality: 1024,
+                taskType: taskType,
+            },
         });
 
         if (!response.embeddings || response.embeddings.length === 0) {
@@ -99,9 +100,7 @@ export const getEmbedding = async (text: string): Promise<number[]> => {
             throw new Error("Failed to generate embedding: No embeddings returned.");
         }
 
-        embedding = response.embeddings[0].values!;
-        embedding = embedding.slice(0, 256);
-        return embedding
+        return response.embeddings[0].values!;
     } catch (error) {
         console.error('Failed to get embedding: ', error);
         throw new Error('Failed to get embedding: ' + error.message);
