@@ -147,7 +147,7 @@ export class JobsService {
           )
       );
 
-      const results = await db
+      const results = await db // TODO: add field weights, eg' title *2, requirements *1.5, etc'
         .with(rankedChunks)
         .select({
           jobId: rankedChunks.jobId,
