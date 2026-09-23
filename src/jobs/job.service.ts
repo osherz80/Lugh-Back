@@ -126,7 +126,9 @@ export class JobsService {
       const embeddedQuery = await getEmbedding(`${hyde.jobDescription} ${hyde.title}`);
       console.log('embeddedQuery len: ', embeddedQuery.length)
 
-      const similarity = sql<number>`1 - (${documentChunks.embedding} <=> ${JSON.stringify(embeddedQuery)})`;
+      // const similarity = sql<number>`1 - (${documentChunks.embedding} <=> ${JSON.stringify(embeddedQuery)})`;
+
+      const similarity = sql<number>`(1 - (${documentChunks.embedding} <=> ${JSON.stringify(embeddedQuery)})) * ${documentChunks.weight}`;
 
       const rankedChunks = db.$with('ranked_chunks').as(
         db
@@ -188,6 +190,13 @@ export class JobsService {
   }
 
   async chunkAndEmbed(job: Job) {
+    const FIELD_WEIGHTS: Record<string, number> = {
+      title: 2.2,
+      requirements: 1.8,
+      responsibilities: 1.0,
+      aboutCompany: 0.3,
+    };
+    const DEFAULT_WEIGHT = 1.0;
     const { id, createdAt, updatedAt, embedding, salaryRange, ...clearJob } = job
     try {
       console.log("embedding job chunks")
@@ -202,7 +211,8 @@ export class JobsService {
             chunkText: clearJob[key],
             section: key,
             chunkIndex: 0,
-            sourceType: 'job'
+            sourceType: 'job',
+            weight: FIELD_WEIGHTS[key] || DEFAULT_WEIGHT,
           }
         }))
     } catch (err) {

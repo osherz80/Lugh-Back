@@ -17,6 +17,7 @@ export const documentChunks = pgTable('document_chunks', {
     embedding: vector('embedding', { dimensions: 1024 }).notNull(),
     section: text('section').notNull(),
     chunkIndex: integer('chunk_index').notNull(),
+    weight: integer('weight').notNull().default(1),
     createdAt: timestamp('created_at').defaultNow(),
 }, (table) => ({
     chunkEmbeddingIdx: index('chunk_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops')),
