@@ -1,4 +1,4 @@
-import { index, integer, pgTable, text, timestamp, uuid, vector, check } from 'drizzle-orm/pg-core';
+import { index, integer, pgTable, text, timestamp, uuid, vector, check, real } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import { jobs } from './jobs';
 import { cvs } from './cvs';
@@ -17,7 +17,7 @@ export const documentChunks = pgTable('document_chunks', {
     embedding: vector('embedding', { dimensions: 1024 }).notNull(),
     section: text('section').notNull(),
     chunkIndex: integer('chunk_index').notNull(),
-    weight: integer('weight').notNull().default(1),
+    weight: real('weight').notNull().default(1),
     createdAt: timestamp('created_at').defaultNow(),
 }, (table) => ({
     chunkEmbeddingIdx: index('chunk_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops')),
