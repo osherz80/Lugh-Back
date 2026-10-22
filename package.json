@@ -33,6 +33,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "axios": "^1.15.1",
     "bcryptjs": "^3.0.3",
+    "cohere-ai": "^8.1.0",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.2",

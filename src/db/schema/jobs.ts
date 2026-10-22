@@ -1,5 +1,5 @@
 import { relations } from 'drizzle-orm';
-import { pgTable, uuid, text, vector, index, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, vector, index, timestamp, integer } from 'drizzle-orm/pg-core';
 import { documentChunks } from './index';
 
 export const jobs = pgTable('jobs', {
@@ -10,6 +10,7 @@ export const jobs = pgTable('jobs', {
     requirements: text('requirements').notNull(),
     niceToHave: text('nice_to_have').notNull(),
     benefits: text('benefits'),
+    company: text('company'),
     aboutCompany: text('about_company'),
     department: text('department'),
     location: text('location'),
@@ -17,13 +18,8 @@ export const jobs = pgTable('jobs', {
     employmentType: text('employment_type'),
     experienceLevel: text('experience_level'),
     salaryRange: text('salary_range'),
-    embedding: vector('embedding', { dimensions: 1024 }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
-}, (table) => {
-    return {
-        jobEmbeddingIdx: index('job_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops')),
-    };
 });
 
 export const jobsRelations = relations(jobs, ({ many }) => ({
