@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { desc, eq, sql, and, inArray } from 'drizzle-orm';
-import { askAiV2, getEmbedding } from 'src/common/helpers/ai';
+import { askAiSeeder, askAiV2, askLocalModel, getEmbedding } from 'src/common/helpers/ai';
 import { db } from 'src/db';
 import { documentChunks, jobs } from 'src/db/schema';
 import { Job, Chunk } from 'src/common/types/general';
-import { JOB_POST_EXTRACTOR } from 'src/common/prompts/jobs';
+import { JOB_POST_CREATOR, JOB_POST_EXTRACTOR } from 'src/common/prompts/jobs';
 import { RerankerService } from './reranker.service';
 
 @Injectable()
@@ -18,10 +18,8 @@ export class JobsService {
     }
     console.log('job: ', job)
     try {
-      let embedding = await getEmbedding(job.description);
       const [createdJob] = await db.insert(jobs).values({
         ...job,
-        embedding
       }).returning();
 
       await this.chunkEmbedInsert(createdJob)
@@ -34,6 +32,7 @@ export class JobsService {
   }
 
   async autoCreateJob(job: { description: string }) {
+    return await this.seeder()
     if (!job) {
       throw new Error('Job is required');
     }
@@ -71,11 +70,9 @@ export class JobsService {
     };
 
     try {
-      let embedding = await getEmbedding(`${job.description}`);
       const structuredJob = await askAiV2<Job>(JOB_POST_EXTRACTOR, `here is the [JOB_POST]: ${job.description}`, 0.3, jobSchema)
       const [createdJob] = await db.insert(jobs).values({
         ...structuredJob,
-        embedding
       }).returning();
 
       await this.chunkEmbedInsert(createdJob)
@@ -87,18 +84,104 @@ export class JobsService {
     }
   }
 
+  async seeder() {
+    // const jobSchema = {
+    //   type: "object",
+    //   properties: {
+    //     title: { type: "string" },
+    //     description: { type: "string" },
+    //     responsibilities: { type: "string" },
+    //     requirements: { type: "string" },
+    //     niceToHave: { type: "string" },
+    //     benefits: { type: "string" },
+    //     aboutCompany: { type: "string" },
+    //     department: { type: "string" },
+    //     location: { type: "string" },
+    //     workModel: { type: "string" },
+    //     employmentType: { type: "string" },
+    //     experienceLevel: { type: "string" },
+    //   },
+    //   required: [
+    //     "title",
+    //     "description",
+    //     "responsibilities",
+    //     "requirements",
+    //     "niceToHave",
+    //     "benefits",
+    //     "aboutCompany",
+    //     "department",
+    //     "location",
+    //     "workModel",
+    //     "employmentType",
+    //     "experienceLevel",
+    //   ],
+    // };
+    const jobSchema = {
+      type: 'OBJECT',
+      properties: {
+        title: { type: 'STRING' },
+        description: { type: 'STRING' },
+        responsibilities: { type: 'STRING' },
+        requirements: { type: 'STRING' },
+        niceToHave: { type: 'STRING' },
+        benefits: { type: 'STRING' },
+        company: { type: 'STRING' },
+        aboutCompany: { type: 'STRING' },
+        department: { type: 'STRING' },
+        location: { type: 'STRING' },
+        workModel: { type: 'STRING' },
+        employmentType: { type: 'STRING' },
+        experienceLevel: { type: 'STRING' },
+      },
+      required: [
+        'title',
+        'description',
+        'responsibilities',
+        'requirements',
+        'niceToHave',
+        'benefits',
+        'company',
+        'aboutCompany',
+        'department',
+        'location',
+        'workModel',
+        'employmentType',
+        'experienceLevel',
+      ]
+    };
+    const providedTitles: string[] = []
+    let itr = 1
+    console.log('jobbing', itr)
+    while (itr <= 10000) {
+      try {
+        const titlesToAdd = providedTitles.length > 500 ? providedTitles.slice(providedTitles.length - 500, providedTitles.length) : providedTitles
+        const titles = "your last provided jobs were: " + titlesToAdd.join(', ') + ". DO NOT repeat those jobs and provide another differnt job"
+        const structuredJob = await askAiSeeder<Job>(`${JOB_POST_CREATOR}`, titles, 0.8, jobSchema)
+        console.log(itr, `${structuredJob.title} in ${structuredJob.company} at ${structuredJob.location}`)
+        const [createdJob] = await db.insert(jobs).values({
+          ...structuredJob,
+        }).returning();
+
+        await this.chunkEmbedInsert(createdJob)
+        console.log('chunks embedded')
+        providedTitles.push(`${structuredJob.title} in ${structuredJob.company} at ${structuredJob.location}`)
+        itr++
+      } catch (err) {
+        console.log(err);
+      }
+    }
+    return true
+  }
+
+
   async rechunk() {
     const chunks = await db.select().from(documentChunks);
     for (const c of chunks) {
       const embedding = await getEmbedding(c.chunkText);
       await db.update(documentChunks).set({ embedding }).where(eq(documentChunks.id, c.id));
     }
-    const allJobs = await db.select().from(jobs);
-    for (const j of allJobs) {
-      const embedding = await getEmbedding(j.description);
-      await db.update(jobs).set({ embedding }).where(eq(jobs.id, j.id));
-    }
-    console.log('re-embedded all chunks and jobs');
+
+    console.log('re-embedded all chunks');
   }
 
   async reweightChunks() {
@@ -122,26 +205,26 @@ export class JobsService {
     console.log('re-weighted all chunks');
   }
 
-  async executeJobSearch(query: string) {
-    // Step 1: Candidate Generation (SQL Pre-filter + Field-Weighted Vector Search)
-    // Pulls top 30 candidate records using MAX() chunk scoring
-    const candidatePool = await this.searchJobsV2('job', query);
+  // async executeJobSearch(query: string) {
+  //   // Step 1: Candidate Generation (SQL Pre-filter + Field-Weighted Vector Search)
+  //   // Pulls top 30 candidate records using MAX() chunk scoring
+  //   const candidatePool = await this.searchJobsV2('job', query);
 
-    if (candidatePool.length === 0) {
-      return [];
-    }
+  //   if (candidatePool.length === 0) {
+  //     return [];
+  //   }
 
-    // Step 2: Post-Retrieval Cross-Encoder Reranking
-    // Reranks top 30 candidates down to top 10 razor-sharp matches
-    const finalResults = await this.rerankerService.rerankJobs(
-      query,
-      candidatePool,
-      10,   // Return top 10
-      0.35, // Drop any candidate scoring below 35% confidence
-    );
+  //   // Step 2: Post-Retrieval Cross-Encoder Reranking
+  //   // Reranks top 30 candidates down to top 10 razor-sharp matches
+  //   const finalResults = await this.rerankerService.rerankJobs(
+  //     query,
+  //     candidatePool,
+  //     10,   // Return top 10
+  //     0.35, // Drop any candidate scoring below 35% confidence
+  //   );
 
-    return finalResults;
-  }
+  //   return finalResults;
+  // }
 
   async searchJobs(resource: "job" | "cv", query: string) {
     if (!query) {
@@ -228,7 +311,16 @@ export class JobsService {
         }))
         .sort((a, b) => b.score - a.score);
 
-      return sortedJobs;
+      for (const j of sortedJobs) {
+        console.log(`\n\ntitle: ${j.title}, score: ${j.score}`)
+      }
+
+      const ranked = await this.rerankerService.rerankJobs(query, sortedJobs, 10, 0.01);
+
+      return ranked.map((job) => ({
+        ...job,
+        score: job.rerankScore,
+      })).sort((a, b) => b.rerankScore - a.rerankScore);
 
     } catch (err) {
       console.error('Error during job search:', err);
@@ -361,7 +453,7 @@ your answer should be only a short job description nothing more.`;
       aboutCompany: 0.3,
     };
     const DEFAULT_WEIGHT = 1.0;
-    const { id, createdAt, updatedAt, embedding, salaryRange, ...clearJob } = job
+    const { id, createdAt, updatedAt, salaryRange, ...clearJob } = job
     try {
       console.log("embedding job chunks")
       return await Promise.all(
@@ -371,12 +463,12 @@ your answer should be only a short job description nothing more.`;
           const embedding = await getEmbedding(clearJob[key])
           return {
             jobId: job.id,
-            embedding,
             chunkText: clearJob[key],
             section: key,
+            embedding,
             chunkIndex: 0,
             sourceType: 'job',
-            weight: FIELD_WEIGHTS[key] || DEFAULT_WEIGHT,
+            weight: DEFAULT_WEIGHT,
           }
         }))
     } catch (err) {

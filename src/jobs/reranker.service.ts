@@ -25,11 +25,12 @@ export class RerankerService {
      */
     async rerankJobs(
         userQuery: string,
-        candidates: (Job & { retrievalScore: number })[],
+        candidates: (Job & { score: number })[],
         topK = 10,
-        minScoreCutoff = 0.35, // Hard cutoff threshold to filter irrelevant noise
+        minScoreCutoff = 0.01, // Hard cutoff threshold to filter irrelevant noise
     ): Promise<RerankedJobResult[]> {
         if (!candidates || candidates.length === 0) {
+            console.log('nothing to rerank')
             return [];
         }
 
@@ -45,6 +46,8 @@ export class RerankerService {
                 topN: topK,
             });
 
+            console.log('cohere response: ', response.results);
+
             // 3. Map results back to full job entities with calibrated confidence scores
             const rerankedResults: RerankedJobResult[] = response.results
                 .filter((result) => result.relevanceScore >= minScoreCutoff)
@@ -52,10 +55,14 @@ export class RerankerService {
                     const originalCandidate = candidates[result.index];
                     return {
                         ...originalCandidate,
-                        vectorScore: originalCandidate.retrievalScore,
+                        vectorScore: originalCandidate.score,
                         rerankScore: Number(result.relevanceScore.toFixed(4)), // Normalized 0.0 - 1.0 confidence
                     };
                 });
+            console.log('rerank is done')
+            for (const job of rerankedResults) {
+                console.log(`\ntitle: ${job.title}, score: ${job.rerankScore}, originalScore: ${job.vectorScore}`)
+            }
 
             return rerankedResults;
         } catch (error) {
@@ -63,8 +70,8 @@ export class RerankerService {
             // Fallback: If reranker API fails, return top-K vector candidate matches directly
             return candidates.slice(0, topK).map((job) => ({
                 ...job,
-                vectorScore: job.retrievalScore,
-                rerankScore: job.retrievalScore,
+                vectorScore: job.score,
+                rerankScore: job.score,
             }));
         }
     }

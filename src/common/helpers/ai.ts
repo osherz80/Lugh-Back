@@ -28,6 +28,21 @@ export const GEMINI_FREE_MODELS = {
     GEMMA_4_9B: "gemma-4-9b-it"
 } as const;
 
+export const GEMINI_FREE_MODELS_ARR = [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-3.1-pro-preview",
+    "gemini-3-flash-preview",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemma-4-26b-a4b-it",
+    "gemma-4-31b-it",
+] as const;
+
 export const askAi = async <T>(prompt: string): Promise<T | undefined> => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -59,7 +74,7 @@ export const askAiV2 = async <T>(
         const textContent = typeof data === 'object' ? JSON.stringify(data) : String(data);
 
         const response = await ai.models.generateContent({
-            model: GEMINI_FREE_MODELS.GEMINI_3_1_FLASH_LITE,
+            model: GEMINI_FREE_MODELS.GEMINI_2_5_FLASH,
             contents: textContent,
             config: {
                 systemInstruction: systemPrompt,
@@ -77,6 +92,44 @@ export const askAiV2 = async <T>(
     } catch (error) {
         console.error('Failed to ask ai: ', error);
         throw new Error('Failed to ask ai: ' + error.message);
+    }
+}
+
+let seedErr = 0
+console.log('arr len', GEMINI_FREE_MODELS_ARR.length)
+export const askAiSeeder = async <T>(
+    systemPrompt: string,
+    data: any,
+    temp: number = 0.7,
+    responseSchema?: any
+): Promise<T> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+        const textContent = typeof data === 'object' ? JSON.stringify(data) : String(data);
+
+
+        const response = await ai.models.generateContent({
+            model: GEMINI_FREE_MODELS_ARR[seedErr % GEMINI_FREE_MODELS_ARR.length],
+            contents: textContent,
+            config: {
+                systemInstruction: systemPrompt,
+                responseMimeType: 'application/json',
+                responseSchema: responseSchema,
+                temperature: temp
+            }
+        });
+
+        if (response.text) {
+            return parseAiResponse(response.text);
+        } else {
+            throw new Error('Failed to ask ai: No response text returned.');
+        }
+    } catch (error: any) {
+        seedErr++
+        console.log('seedErr', seedErr)
+        console.log('seedErr %', seedErr % GEMINI_FREE_MODELS_ARR.length)
+        throw new Error(`Failed to ask ai\nNext Model: ${GEMINI_FREE_MODELS_ARR[seedErr % GEMINI_FREE_MODELS_ARR.length]}:\n ${error.message}`)
     }
 }
 
@@ -123,7 +176,7 @@ interface EmbeddingResponse {
 }
 
 export const getLocalEmbedding = async (text: string): Promise<number[]> => {
-    const response = await fetch("http://127.0.0.1:8000/v1/embeddings", {
+    const response = await fetch("http://127.0.0.1:8001/v1/embeddings", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -142,3 +195,56 @@ export const getLocalEmbedding = async (text: string): Promise<number[]> => {
     // החזרת הוקטור הראשון ברשימה
     return data.data[0].embedding;
 }
+
+export const askLocalModel = async <T = string>(
+    prompt: string,
+    schema?: Record<string, unknown>
+): Promise<T> => {
+    const messages: Array<{ role: string; content: string }> = [];
+
+    if (schema) {
+        messages.push({
+            role: "system",
+            content: "You are a JSON generator. Respond strictly with raw JSON matching the requested structure without markdown.",
+        });
+    }
+
+    messages.push({ role: "user", content: prompt });
+
+    const bodyPayload: Record<string, unknown> = {
+        messages,
+        temperature: 0.8,
+    };
+
+    if (schema) {
+        bodyPayload.response_format = {
+            type: "json_object",
+            schema: schema,
+        };
+    }
+
+    const response = await fetch("http://127.0.0.1:8000/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(bodyPayload),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error ${response.status}: ${errorText || response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content: string = data.choices[0].message.content;
+
+    // If no schema was passed, return raw response text
+    if (!schema) {
+        return content as T;
+    }
+
+    // Clean markdown backticks if model wrapped JSON output
+    const cleanedJson = content.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
+    return JSON.parse(cleanedJson) as T;
+};
