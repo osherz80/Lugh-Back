@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import { pgTable, uuid, text, vector, index, timestamp, integer } from 'drizzle-orm/pg-core';
 import { documentChunks } from './index';
 
@@ -20,7 +20,12 @@ export const jobs = pgTable('jobs', {
     salaryRange: text('salary_range'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+}, (table) => ({
+    titleRequirementsSearchIdx: index('jobs_title_requirements_search_idx').using(
+        'gin',
+        sql`to_tsvector('simple', ${table.title} || ' ' || coalesce(${table.requirements}, ''))`,
+    ),
+}));
 
 export const jobsRelations = relations(jobs, ({ many }) => ({
     chunks: many(documentChunks),

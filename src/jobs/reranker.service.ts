@@ -1,12 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { CohereClient } from 'cohere-ai';
-import { jobs } from '../db/schema'
-import { Job } from 'src/common/types/general';
+import { CV, Job } from 'src/common/types/general';
 
 export interface RerankedJobResult extends Job {
     vectorScore: number;
     rerankScore: number;
 }
+
+export type Reranked<T> = T & {
+    vectorScore: number;
+    rerankScore: number;
+};
 
 @Injectable()
 export class RerankerService {
@@ -26,60 +30,57 @@ export class RerankerService {
     async rerankJobs(
         userQuery: string,
         candidates: (Job & { score: number })[],
-        topK = 10,
-        minScoreCutoff = 0.01, // Hard cutoff threshold to filter irrelevant noise
     ): Promise<RerankedJobResult[]> {
+        return this.rerankItems(userQuery, candidates, (job) => this.formatJobForReranker(job));
+    }
+
+    async rerankCvs(
+        userQuery: string,
+        candidates: (CV & { score: number })[],
+    ): Promise<Reranked<CV & { score: number }>[]> {
+        return this.rerankItems(userQuery, candidates, (cv) => this.formatCvForReranker(cv));
+    }
+
+    private async rerankItems<T extends { score: number }>(
+        userQuery: string,
+        candidates: T[],
+        format: (item: T) => string,
+    ): Promise<Reranked<T>[]> {
         if (!candidates || candidates.length === 0) {
-            console.log('nothing to rerank')
             return [];
         }
 
         try {
-            // 1. Format candidate records into structured text payloads for the Cross-Encoder
-            const documents = candidates.map((job) => this.formatJobForReranker(job));
-
-            // 2. Call Cohere Rerank API (using rerank-v3.5 for optimal domain precision)
+            const documents = candidates.map((item) => format(item));
             const response = await this.cohere.rerank({
                 model: 'rerank-v3.5',
                 query: userQuery,
-                documents: documents,
-                topN: topK,
+                documents,
+                topN: documents.length,
             });
 
-            console.log('cohere response: ', response.results);
-
-            // 3. Map results back to full job entities with calibrated confidence scores
-            const rerankedResults: RerankedJobResult[] = response.results
-                .filter((result) => result.relevanceScore >= minScoreCutoff)
-                .map((result) => {
-                    const originalCandidate = candidates[result.index];
-                    return {
-                        ...originalCandidate,
-                        vectorScore: originalCandidate.score,
-                        rerankScore: Number(result.relevanceScore.toFixed(4)), // Normalized 0.0 - 1.0 confidence
-                    };
-                });
-            console.log('rerank is done')
-            for (const job of rerankedResults) {
-                console.log(`\ntitle: ${job.title}, score: ${job.rerankScore}, originalScore: ${job.vectorScore}`)
-            }
-
-            return rerankedResults;
+            return response.results.map((result) => {
+                const originalCandidate = candidates[result.index];
+                return {
+                    ...originalCandidate,
+                    vectorScore: originalCandidate.score,
+                    rerankScore: Number(result.relevanceScore.toFixed(4)),
+                };
+            });
         } catch (error) {
             this.logger.error('Cross-Encoder reranking failed:', error);
-            // Fallback: If reranker API fails, return top-K vector candidate matches directly
-            return candidates.slice(0, topK).map((job) => ({
-                ...job,
-                vectorScore: job.score,
-                rerankScore: job.score,
+            return candidates.map((item) => ({
+                ...item,
+                vectorScore: item.score,
+                rerankScore: item.score,
             }));
         }
     }
 
     /**
-     * Constructs a compact, high-density text representation of a job post.
-     * Excludes low-signal fluff (benefits/about) to optimize token budget and relevance.
-     */
+    * Constructs a compact, high-density text representation of a job post.
+    * Excludes low-signal fluff (benefits/about) to optimize token budget and relevance.
+    */
     private formatJobForReranker(job: Job): string {
         const parts: string[] = [];
 
@@ -90,5 +91,20 @@ export class RerankerService {
         if (job.location) parts.push(`Location: ${job.location}`);
 
         return parts.join('\n');
+    }
+
+    private formatCvForReranker(cv: CV): string {
+        const parts: string[] = [];
+
+        if (cv.targetRole) parts.push(`Target role: ${cv.targetRole}`);
+        if (cv.summary) parts.push(`Summary: ${cv.summary}`);
+        if (cv.skills?.length) {
+            parts.push(`Skills: ${cv.skills.map((group) => `${group.category}: ${group.skills.join(', ')}`).join('; ')}`);
+        }
+        if (cv.experiences?.length) {
+            parts.push(`Experience: ${cv.experiences.map((experience) => `${experience.roleTag}: ${experience.description}`).join('\n')}`);
+        }
+
+        return parts.join('\n') || 'CV';
     }
 }

@@ -176,7 +176,7 @@ interface EmbeddingResponse {
 }
 
 export const getLocalEmbedding = async (text: string): Promise<number[]> => {
-    const response = await fetch("http://127.0.0.1:8001/v1/embeddings", {
+    const response = await fetch("http://127.0.0.1:8000/v1/embeddings", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",

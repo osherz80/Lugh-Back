@@ -1,11 +1,27 @@
-import { Injectable } from '@nestjs/common';
-import { desc, eq, sql, and, inArray } from 'drizzle-orm';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { desc, eq, sql, and, inArray, SQL } from 'drizzle-orm';
 import { askAiSeeder, askAiV2, askLocalModel, getEmbedding } from 'src/common/helpers/ai';
 import { db } from 'src/db';
-import { documentChunks, jobs } from 'src/db/schema';
+import { cvs, documentChunks, jobs } from 'src/db/schema';
 import { Job, Chunk } from 'src/common/types/general';
 import { JOB_POST_CREATOR, JOB_POST_EXTRACTOR } from 'src/common/prompts/jobs';
 import { RerankerService } from './reranker.service';
+import {
+  JobSearchFilters,
+  JobSearchInput,
+  KEYWORD_CANDIDATE_LIMIT,
+  RAW_COSINE_FLOOR,
+  VECTOR_CANDIDATE_LIMIT,
+  buildSearchPool,
+  capByRerankFloor,
+  hasSearchFilters,
+  searchFilters,
+  sectionWeight,
+  shouldRunHyde,
+  textSearchConfig,
+  tierRankedJobs,
+  titleMatchesQuery,
+} from './job-search';
 
 @Injectable()
 export class JobsService {
@@ -32,7 +48,6 @@ export class JobsService {
   }
 
   async autoCreateJob(job: { description: string }) {
-    return await this.seeder()
     if (!job) {
       throw new Error('Job is required');
     }
@@ -185,155 +200,109 @@ export class JobsService {
   }
 
   async reweightChunks() {
-    const FIELD_WEIGHTS: Record<string, number> = {
-      title: 2.2,
-      requirements: 1.8,
-      responsibilities: 1.0,
-      aboutCompany: 0.3,
-    };
-    const DEFAULT_WEIGHT = 1.0;
-    const chunks = await db.select().from(documentChunks)
-    console.log('reweighjting')
-    for (const chunk of chunks) {
-      let w = DEFAULT_WEIGHT
-      if (chunk.section === 'title') w = DEFAULT_WEIGHT || FIELD_WEIGHTS.title
-      if (chunk.section === 'requirements') w = DEFAULT_WEIGHT || FIELD_WEIGHTS.requirements
-      if (chunk.section === 'responsibilities') w = DEFAULT_WEIGHT || FIELD_WEIGHTS.responsibilities
-      if (chunk.section === 'aboutCompany') w = DEFAULT_WEIGHT || FIELD_WEIGHTS.aboutCompany
-      await db.update(documentChunks).set({ weight: w }).where(eq(documentChunks.id, chunk.id));
-    }
-    console.log('re-weighted all chunks');
+    await db.execute(sql`
+      UPDATE document_chunks
+      SET weight = CASE section
+        WHEN 'title' THEN ${sectionWeight('title')}
+        WHEN 'requirements' THEN ${sectionWeight('requirements')}
+        WHEN 'niceToHave' THEN ${sectionWeight('niceToHave')}
+        WHEN 'responsibilities' THEN ${sectionWeight('responsibilities')}
+        WHEN 'description' THEN ${sectionWeight('description')}
+        WHEN 'aboutCompany' THEN ${sectionWeight('aboutCompany')}
+        ELSE ${sectionWeight('other')}
+      END
+    `);
   }
 
-  // async executeJobSearch(query: string) {
-  //   // Step 1: Candidate Generation (SQL Pre-filter + Field-Weighted Vector Search)
-  //   // Pulls top 30 candidate records using MAX() chunk scoring
-  //   const candidatePool = await this.searchJobsV2('job', query);
-
-  //   if (candidatePool.length === 0) {
-  //     return [];
-  //   }
-
-  //   // Step 2: Post-Retrieval Cross-Encoder Reranking
-  //   // Reranks top 30 candidates down to top 10 razor-sharp matches
-  //   const finalResults = await this.rerankerService.rerankJobs(
-  //     query,
-  //     candidatePool,
-  //     10,   // Return top 10
-  //     0.35, // Drop any candidate scoring below 35% confidence
-  //   );
-
-  //   return finalResults;
-  // }
-
-  async searchJobs(resource: "job" | "cv", query: string) {
+  async searchJobs(input: JobSearchInput) {
+    const query = input.query?.trim() ?? '';
     if (!query) {
-      throw new Error('Search query is required');
+      throw new BadRequestException('query is required');
+    }
+    if (input.resource !== 'job' && input.resource !== 'cv') {
+      throw new BadRequestException('resource must be "job" or "cv"');
+    }
+    if (input.resource === 'cv') {
+      return this.searchCvs(query);
     }
 
-    // await this.rechunk()
-    // await this.reweightChunks();
-    // return;
-
-    const hydeScheme = {
-      type: 'OBJECT',
-      properties: {
-        jobDescription: { type: 'STRING' },
-        title: { type: 'STRING' }
-      },
-      required: ['jobDescription', 'title']
+    const filters = searchFilters(input);
+    const titles = await this.jobTitles(filters);
+    if (hasSearchFilters(filters) && titles.length === 0) {
+      return [];
     }
 
-    try {
-      const hydePrpt = `you are a job to candidate matcher, your role is to help our candidates with their job search.
-    our candidate dont know how to search correctly in our app and use vague search terms,
-    your job is to take their query and generate a hypotethical answer that will match 
-    what job they tried to find.
-    your answer should be only a short job description nothing more.`;
+    const textToEmbed = shouldRunHyde(query, titles.map((row) => row.title))
+      ? await this.hypotheticalJobText(query)
+      : query;
+    const embeddedQuery = await getEmbedding(textToEmbed, 'RETRIEVAL_QUERY');
+    const filteredIds = hasSearchFilters(filters) ? titles.map((row) => row.id) : undefined;
+    const [vectorHits, keywordHits] = await Promise.all([
+      this.vectorHits('job', embeddedQuery, filteredIds),
+      this.keywordJobHits(query, input.language, filters),
+    ]);
 
-      const hyde = await askAiV2<{ jobDescription: string, title: string }>(hydePrpt, `here is the user query: ${query}`, 0.3, hydeScheme);
-      console.log('hyde: ', hyde)
-      const embeddedQuery = await getEmbedding(`${hyde.jobDescription} ${hyde.title}`);
-      console.log('embeddedQuery len: ', embeddedQuery.length)
+    const titleHitIds = titles
+      .filter((row) => titleMatchesQuery(row.title, query))
+      .map((row) => row.id);
+    const poolIds = buildSearchPool(vectorHits, keywordHits, titleHitIds);
+    if (poolIds.length === 0) {
+      return [];
+    }
 
-      // const similarity = sql<number>`1 - (${documentChunks.embedding} <=> ${JSON.stringify(embeddedQuery)})`;
+    const found = await db.query.jobs.findMany({
+      where: inArray(jobs.id, poolIds),
+    });
+    const scoreById = new Map(vectorHits.map((hit) => [hit.id, hit.score]));
+    const jobsById = new Map(found.map((job) => [job.id, job]));
+    const candidates = poolIds.flatMap((id) => {
+      const job = jobsById.get(id);
+      if (!job) return [];
+      return [{ ...job, score: scoreById.get(id) ?? 0 }];
+    });
 
-      const similarity = sql<number>`(1 - (${documentChunks.embedding} <=> ${JSON.stringify(embeddedQuery)})) * ${documentChunks.weight}`;
-
-      const rankedChunks = db.$with('ranked_chunks').as(
-        db
-          .select({
-            jobId: documentChunks.jobId,
-            chunkScore: similarity.as('chunk_score'),
-            rank: sql<number>`ROW_NUMBER() OVER (
-            PARTITION BY ${documentChunks.jobId} 
-            ORDER BY 1 - (${documentChunks.embedding} <=> ${JSON.stringify(embeddedQuery)}) DESC
-          )`.as('rank'),
-          })
-          .from(documentChunks)
-          .where(
-            and(
-              eq(documentChunks.sourceType, resource),
-              sql`${similarity} > 0.1`
-            )
-          )
-      );
-
-      const results = await db // TODO: add field weights, eg' title *2, requirements *1.5, etc'
-        .with(rankedChunks)
-        .select({
-          jobId: rankedChunks.jobId,
-          score: sql<number>`AVG(${rankedChunks.chunkScore})`.as('score'),
-        })
-        .from(rankedChunks)
-        .where(sql`${rankedChunks.rank} <= 3`)
-        .groupBy(rankedChunks.jobId)
-        .orderBy(desc(sql`AVG(${rankedChunks.chunkScore})`))
-        .limit(100);
-
-      const jobIds = results
-        .map((result) => result.jobId)
-        .filter((id): id is string => Boolean(id));
-
-      if (jobIds.length === 0) {
-        return [];
-      }
-
-      const jobsFound = await db.query.jobs.findMany({
-        where: inArray(jobs.id, jobIds),
-      });
-
-      const scoreMap = new Map(results.map((result) => [result.jobId, result.score]));
-      const sortedJobs = jobsFound
+    const reranked = await this.rerankerService.rerankJobs(query, candidates);
+    const returnedIds = new Set(reranked.map((job) => job.id));
+    const withScores = [
+      ...reranked,
+      ...candidates
+        .filter((job) => !returnedIds.has(job.id))
         .map((job) => ({
           ...job,
-          score: scoreMap.get(job.id) ?? 0,
-        }))
-        .sort((a, b) => b.score - a.score);
+          vectorScore: job.score,
+          rerankScore: 0,
+        })),
+    ];
 
-      for (const j of sortedJobs) {
-        console.log(`\n\ntitle: ${j.title}, score: ${j.score}`)
-      }
-
-      const ranked = await this.rerankerService.rerankJobs(query, sortedJobs, 10, 0.01);
-
-      return ranked.map((job) => ({
-        ...job,
-        score: job.rerankScore,
-      })).sort((a, b) => b.rerankScore - a.rerankScore);
-
-    } catch (err) {
-      console.error('Error during job search:', err);
-      throw err;
-    }
+    return tierRankedJobs(withScores, new Set(titleHitIds)).map((job) => ({
+      ...job,
+      score: job.rerankScore,
+    }));
   }
 
-  async searchJobsV2(resource: 'job' | 'cv', query: string) {
-    if (!query) {
-      throw new Error('Search query is required');
+  private async searchCvs(query: string) {
+    const embeddedQuery = await getEmbedding(query, 'RETRIEVAL_QUERY');
+    const hits = await this.vectorHits('cv', embeddedQuery);
+    if (hits.length === 0) {
+      return [];
     }
 
-    // 1. HyDE Query Expansion
+    const found = await db.query.cvs.findMany({
+      where: inArray(cvs.id, hits.map((hit) => hit.id)),
+    });
+    const scoreById = new Map(hits.map((hit) => [hit.id, hit.score]));
+    const candidates = found
+      .map((cv) => ({ ...cv, score: scoreById.get(cv.id) ?? 0 }))
+      .sort((left, right) => right.score - left.score);
+    const reranked = await this.rerankerService.rerankCvs(query, candidates);
+
+    return capByRerankFloor(reranked).map((cv) => ({
+      ...cv,
+      score: cv.rerankScore,
+    }));
+  }
+
+  private async hypotheticalJobText(query: string) {
     const hydeScheme = {
       type: 'OBJECT',
       properties: {
@@ -342,117 +311,95 @@ export class JobsService {
       },
       required: ['jobDescription', 'title'],
     };
+    const hydePrompt = `you are a job to candidate matcher, your role is to help our candidates with their job search.
+    our candidate dont know how to search correctly in our app and use vague search terms,
+    your job is to take their query and generate a hypotethical answer that will match 
+    what job they tried to find.
+    your answer should be only a short job description nothing more.`;
+    const hyde = await askAiV2<{ jobDescription: string; title: string }>(
+      hydePrompt,
+      `here is the user query: ${query}`,
+      0.3,
+      hydeScheme,
+    );
+    return `${hyde.jobDescription} ${hyde.title}`;
+  }
 
-    try {
-      const hydePrompt = `you are a job to candidate matcher, your role is to help our candidates with their job search.
-our candidate dont know how to search correctly in our app and use vague search terms,
-your job is to take their query and generate a hypotethical answer that will match 
-what job they tried to find.
-your answer should be only a short job description nothing more.`;
+  private async jobTitles(filters: JobSearchFilters) {
+    const conditions = this.jobFilterConditions(filters);
+    const query = db.select({ id: jobs.id, title: jobs.title }).from(jobs);
+    if (conditions.length === 0) return query;
+    return query.where(and(...conditions));
+  }
 
-      const hyde = await askAiV2<{ jobDescription: string; title: string }>(
-        hydePrompt,
-        `here is the user query: ${query}`,
-        0.3,
-        hydeScheme,
-      );
-
-      const embeddedQuery = await getEmbedding(
-        `${hyde.jobDescription} ${hyde.title}`,
-      );
-
-      // 2. Compute Raw Cosine Similarity (0.0 to 1.0)
-      const rawSimilarity = sql<number>`(1 - (${documentChunks.embedding} <=> ${JSON.stringify(embeddedQuery)}))`;
-
-      // 3. Apply Normalized Field Weights (Sum = 1.0)
-      // Adjust 'chunkType' column name if your schema uses a different field name (e.g. 'field', 'category')
-      const weightedSimilarity = sql<number>`
-  ${rawSimilarity} * CASE ${documentChunks.section}
-    WHEN 'title' THEN 0.40
-    WHEN 'requirements' THEN 0.25
-    WHEN 'responsibilities' THEN 0.15
-    WHEN 'nice_to_have' THEN 0.10
-    WHEN 'description' THEN 0.05
-    WHEN 'about_company' THEN 0.05
-    ELSE 0.10
-  END
-`;
-
-      // 4. CTE: Filter out low raw similarity scores first
-      const weightedChunks = db.$with('weighted_chunks').as(
-        db
-          .select({
-            jobId: documentChunks.jobId,
-            weightedScore: weightedSimilarity.as('weighted_score'),
-          })
-          .from(documentChunks)
-          .where(
-            and(
-              eq(documentChunks.sourceType, resource),
-              sql`${rawSimilarity} > 0.15`, // Hard threshold to remove noise before aggregation
-            ),
-          ),
-      );
-
-      // 5. Aggregate by MAX() score per job instead of AVG()
-      // Prevents weak boilerplate chunks from diluting a strong title/requirements match
-      const results = await db
-        .with(weightedChunks)
-        .select({
-          jobId: weightedChunks.jobId,
-          score: sql<number>`MAX(${weightedChunks.weightedScore})`.as('score'),
-        })
-        .from(weightedChunks)
-        .groupBy(weightedChunks.jobId)
-        .orderBy(desc(sql`MAX(${weightedChunks.weightedScore})`))
-        .limit(30); // Fetch top 30 candidate pool for Cross-Encoder reranking
-
-      const jobIds = results
-        .map((result) => result.jobId)
-        .filter((id): id is string => Boolean(id));
-
-      if (jobIds.length === 0) {
-        return [];
-      }
-
-      // 6. Fetch Full Job Objects for the candidate set
-      const jobsFound = await db.query.jobs.findMany({
-        where: inArray(jobs.id, jobIds),
-      });
-
-      // 7. Preserve Exact Ranking Order
-      const scoreMap = new Map(
-        results.map((result) => [result.jobId, result.score]),
-      );
-
-      const topCandidates = jobsFound
-        .map((job) => ({
-          ...job,
-          retrievalScore: Number(
-            (scoreMap.get(job.id) ?? 0).toFixed(6),
-          ),
-        }))
-        .sort((a, b) => b.retrievalScore - a.retrievalScore);
-      for (const job of topCandidates.slice(0, 10)) {
-        console.log(`\ntitle: ${job.title}\n score: ${job.retrievalScore}`)
-      }
-      // console.log('topCandidates: ', topCandidates.slice(0, 10))
-
-      return topCandidates;
-    } catch (err) {
-      console.log("error during job search", err)
-      throw err;
+  private jobFilterConditions(filters: JobSearchFilters): SQL[] {
+    const conditions: SQL[] = [];
+    if (filters.location) {
+      conditions.push(sql`lower(${jobs.location}) = ${filters.location.toLowerCase()}`);
     }
+    if (filters.workModel) {
+      conditions.push(sql`lower(${jobs.workModel}) = ${filters.workModel.toLowerCase()}`);
+    }
+    if (filters.experienceLevel) {
+      conditions.push(sql`lower(${jobs.experienceLevel}) = ${filters.experienceLevel.toLowerCase()}`);
+    }
+    return conditions;
+  }
+
+  private async keywordJobHits(query: string, language: string | undefined, filters: JobSearchFilters) {
+    const config = textSearchConfig(language);
+    const regconfig = () => sql.raw(`'${config}'`);
+    const document = () => sql`to_tsvector(${regconfig()}, ${jobs.title} || ' ' || coalesce(${jobs.requirements}, ''))`;
+    const lexemes = () => sql`(
+      SELECT string_agg(quote_literal(lexeme), ' | ')
+      FROM unnest(to_tsvector(${regconfig()}, ${query}))
+    )`;
+    const tsq = () => sql`to_tsquery(${regconfig()}, ${lexemes()})`;
+    const rows = await db
+      .select({
+        id: jobs.id,
+        rank: sql<number>`ts_rank(${document()}, ${tsq()})`.as('rank'),
+      })
+      .from(jobs)
+      .where(and(
+        sql`${lexemes()} IS NOT NULL`,
+        sql`${document()} @@ ${tsq()}`,
+        ...this.jobFilterConditions(filters),
+      ))
+      .orderBy(desc(sql`ts_rank(${document()}, ${tsq()})`))
+      .limit(KEYWORD_CANDIDATE_LIMIT);
+
+    return rows.map((row) => ({ id: row.id, rank: Number(row.rank) }));
+  }
+
+  private async vectorHits(resource: 'job' | 'cv', embeddedQuery: number[], jobIds?: string[]) {
+    const embedded = JSON.stringify(embeddedQuery);
+    const rawCosine = () => sql`1 - (${documentChunks.embedding} <=> ${embedded})`;
+    const idColumn = resource === 'job' ? documentChunks.jobId : documentChunks.cvId;
+    const conditions: SQL[] = [
+      eq(documentChunks.sourceType, resource),
+      sql`${rawCosine()} > ${RAW_COSINE_FLOOR}`,
+      sql`${idColumn} IS NOT NULL`,
+    ];
+    if (jobIds) {
+      conditions.push(inArray(documentChunks.jobId, jobIds));
+    }
+
+    const rows = await db
+      .select({
+        id: idColumn,
+        score: sql<number>`MAX(${rawCosine()} * ${documentChunks.weight})`.as('score'),
+      })
+      .from(documentChunks)
+      .where(and(...conditions))
+      .groupBy(idColumn)
+      .orderBy(desc(sql`MAX(${rawCosine()} * ${documentChunks.weight})`))
+      .limit(VECTOR_CANDIDATE_LIMIT);
+
+    return rows.flatMap((row) => (row.id ? [{ id: row.id, score: Number(row.score) }] : []));
   }
 
   async chunkAndEmbed(job: Job) {
-    const FIELD_WEIGHTS: Record<string, number> = {
-      title: 2.2,
-      requirements: 1.8,
-      responsibilities: 1.0,
-      aboutCompany: 0.3,
-    };
-    const DEFAULT_WEIGHT = 1.0;
     const { id, createdAt, updatedAt, salaryRange, ...clearJob } = job
     try {
       console.log("embedding job chunks")
@@ -468,7 +415,7 @@ your answer should be only a short job description nothing more.`;
             embedding,
             chunkIndex: 0,
             sourceType: 'job',
-            weight: DEFAULT_WEIGHT,
+            weight: sectionWeight(key),
           }
         }))
     } catch (err) {
